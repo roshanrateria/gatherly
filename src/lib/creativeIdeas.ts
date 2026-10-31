@@ -1,0 +1,136 @@
+import { Idea, IdeaCategory } from '../types/idea';
+import { EventType } from '../types/event';
+
+export function getDefaultIdeasForEvent(eventType: EventType): Idea[] {
+  if (eventType === 'wedding') {
+    return [
+      {
+        id: 'idea_w_1',
+        category: 'theme',
+        title: 'Mughal Heritage Royal Courtyard Theme',
+        description: 'Antique brass lanterns, velvet drapery in deep jewel tones (plum, ochre gold and emerald), and fresh white tuberose scents.',
+        fitExplanation: 'Creates an opulent, timeless atmosphere suited for grand palace or banquet lawn settings.',
+        estimatedCostTier: 'high',
+        requirements: ['Warm ambient lighting fixtures', 'Brass urlis with floating candles', 'Marigold and jasmine arches'],
+        status: 'saved',
+        tags: ['Royal', 'Heritage', 'Floral'],
+      },
+      {
+        id: 'idea_w_2',
+        category: 'menu',
+        title: 'Artisanal Street Food & Chaat Galleria',
+        description: 'Interactive live food stations featuring Banarasi Tamatar Chaat, Kolkata Puchkas with 4 flavored waters, and Dahi Bhalla spheres.',
+        fitExplanation: 'Massive hit with both young attendees and traditional elders; ensures vibrant engagement during high tea.',
+        estimatedCostTier: 'medium',
+        requirements: ['Skilled live counter chefs', 'Eco-friendly terracotta earthen kulhads', 'Hygienic RO water setup'],
+        status: 'saved',
+        tags: ['Hospitality', 'Live Counters', 'Chaat'],
+      },
+      {
+        id: 'idea_w_3',
+        category: 'entertainment',
+        title: 'Flash Mob Family Choreography & Live Dhol Welcome',
+        description: 'High-energy Punjabi / Rajasthani Dhol troupe at the entrance followed by a synchronized 3-generation family dance routine.',
+        fitExplanation: 'Breaks the ice instantly and energizes both bride and groom sides before the main ceremony.',
+        estimatedCostTier: 'medium',
+        requirements: ['2 rehearsal sessions with choreographer', '4 Dhol instrumentalists', 'Wireless mic for emcee'],
+        status: 'suggested',
+        tags: ['Music', 'Energy', 'Sangeet'],
+      },
+      {
+        id: 'idea_w_4',
+        category: 'photo_concept',
+        title: 'Sunset Lakeview Silhouette & Smoke Bomb Couple Shoot',
+        description: 'Candid portraits captured during the golden hour (5:15 PM - 5:45 PM) with organic pastel smoke flares matching the bridal lehenga.',
+        fitExplanation: 'Delivers magazine-cover worthy wedding album centerpiece photos.',
+        estimatedCostTier: 'low',
+        requirements: ['Venue terrace or outdoor lawn view', 'Certified eco-friendly smoke canisters', 'Golden hour timing'],
+        status: 'suggested',
+        tags: ['Photography', 'Cinematic', 'Couple'],
+      },
+      {
+        id: 'idea_w_5',
+        category: 'gift',
+        title: 'Customized Hand-Poured Scented Candles & Organic Honey Jars',
+        description: 'Elegant ivory gift boxes featuring artisanal forest honey jars and soy wax candles infused with sandalwood and jasmine.',
+        fitExplanation: 'Sophisticated sustainable return favor that guests actually use and cherish.',
+        estimatedCostTier: 'medium',
+        requirements: ['Custom monogram label printing', 'Eco-friendly kraft packaging', 'Delivery 2 weeks before wedding'],
+        status: 'suggested',
+        tags: ['Favors', 'Sustainable', 'Keepsake'],
+      },
+    ];
+  } else if (eventType === 'corporate') {
+    return [
+      {
+        id: 'idea_c_1',
+        category: 'theme',
+        title: 'Future Tech & Sustainable Green Innovations',
+        description: 'Minimalist carbon-neutral stage decor, live digital agenda displays, and live indoor vertical moss walls.',
+        fitExplanation: 'Aligns with corporate ESG commitments and showcases innovative engineering culture.',
+        estimatedCostTier: 'medium',
+        requirements: ['Digital badge scanners', 'Potted plants instead of cut flowers', 'Recycled kraft delegate kits'],
+        status: 'saved',
+        tags: ['Corporate', 'Sustainability', 'Tech'],
+      },
+      {
+        id: 'idea_c_2',
+        category: 'activity',
+        title: 'Live Interactive Q&A & Audience Sentiment Polling',
+        description: 'Real-time word clouds and upvoted executive questions broadcasted directly onto the plenary LED wall.',
+        fitExplanation: 'Drives 85%+ engagement and avoids awkward silence during question periods.',
+        estimatedCostTier: 'low',
+        requirements: ['Audience response software integration', 'Dedicated moderator tablet', 'Stable auditorium WiFi'],
+        status: 'saved',
+        tags: ['Engagement', 'Audience', 'Interactive'],
+      },
+      {
+        id: 'idea_c_3',
+        category: 'menu',
+        title: 'Artisan Espresso Bar & Superfood Brain Fuel Luncheon',
+        description: 'Specialty pour-over coffee bar with oat milk options, quinoa avocado grain bowls, and high-protein skewers.',
+        fitExplanation: 'Prevents afternoon conference sluggishness and caters to diverse wellness lifestyles.',
+        estimatedCostTier: 'medium',
+        requirements: ['Barista station on foyer level', 'Clearly labeled dietary cards (Vegan, GF, Halal)'],
+        status: 'suggested',
+        tags: ['Wellness', 'Catering', 'Coffee'],
+      },
+    ];
+  } else {
+    return [
+      {
+        id: 'idea_b_1',
+        category: 'theme',
+        title: 'Sunset Neon & Golden Hour Lounge',
+        description: 'Warm fairy light canopy with vintage Edison bulbs, neon cursive photo sign ("Forty & Fabulous"), and plush velvet seating.',
+        fitExplanation: 'Sophisticated aesthetic for milestone adult celebrations that balances intimacy and high celebration.',
+        estimatedCostTier: 'medium',
+        requirements: ['Custom neon signage', 'Lounge furniture rental', 'Mood dimmer lighting'],
+        status: 'saved',
+        tags: ['Neon', 'Chic', 'Milestone'],
+      },
+      {
+        id: 'idea_b_2',
+        category: 'activity',
+        title: 'Audio Guestbook Vintage Rotary Phone',
+        description: 'Guests pick up a 1970s rotary telephone and leave emotional, funny voice messages for the honoree to keep forever.',
+        fitExplanation: 'Far more personal and nostalgic than a written guestbook; creates a hilarious audio keepsake.',
+        estimatedCostTier: 'low',
+        requirements: ['Audio guestbook rental unit', 'Signage explaining how to dial & speak', 'Quiet foyer alcove'],
+        status: 'saved',
+        tags: ['Keepsake', 'Audio', 'Interactive'],
+      },
+      {
+        id: 'idea_b_3',
+        category: 'menu',
+        title: 'Signature Cocktail Tasting Flight & Custom Tier Cake',
+        description: 'Three bespoke cocktails named after pivotal life milestones, paired with a salted caramel & Belgian dark chocolate cake.',
+        fitExplanation: 'Adds a personal storytelling narrative to the food and beverage experience.',
+        estimatedCostTier: 'medium',
+        requirements: ['Mixologist consultation', 'Artisanal pastry chef for cake structure'],
+        status: 'suggested',
+        tags: ['Cake', 'Cocktails', 'Gourmet'],
+      },
+    ];
+  }
+}

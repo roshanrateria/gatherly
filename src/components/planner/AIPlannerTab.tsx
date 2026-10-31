@@ -1,0 +1,465 @@
+import React, { useState } from 'react';
+import {
+  Send,
+  Sparkles,
+  Bot,
+  User,
+  ShieldCheck,
+  Cpu,
+  Check,
+  AlertTriangle,
+  ArrowRight,
+  HelpCircle,
+  Clock,
+  Layers,
+  ChevronDown,
+  RefreshCw,
+  Info,
+} from 'lucide-react';
+import { AppState, ChatMessage, ProposedChange, StructuredAIResponse } from '../../types/index';
+import { generateAIPlanResponse } from '../../lib/aiService';
+import { formatCurrency } from '../../lib/currency';
+
+interface AIPlannerTabProps {
+  state: AppState;
+  onUpdateState: (newState: AppState) => void;
+  onShowToast: (type: 'success' | 'warning' | 'error' | 'info', title: string, msg?: string) => void;
+}
+
+export const AIPlannerTab: React.FC<AIPlannerTabProps> = ({
+  state,
+  onUpdateState,
+  onShowToast,
+}) => {
+  const [inputText, setInputText] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null);
+
+  const quickPrompts = [
+    {
+      label: 'Increase guests to 350 (fixed budget)',
+      text: `We need to increase guests from ${state.event.guests.count} to 350, but our total budget is strictly fixed at ${state.event.budget.currency} ${state.event.budget.total.toLocaleString()}. Please calculate pressure points and propose trade-offs.`,
+    },
+    {
+      label: 'Prioritize Photography over Decor',
+      text: 'Photography and candid cinematography are now a much higher priority for us than decoration. Please propose a suitable reallocation of funds.',
+    },
+    {
+      label: 'Scan for Budget Leaks & Overruns',
+      text: 'Analyze our current budget allocations, identify potential overruns or unallocated reserves, and suggest savings that protect our must-haves.',
+    },
+    {
+      label: 'Evaluate Timeline & Day-of Schedule',
+      text: 'Inspect our milestones and run sheet for any tight transitions, missing setup buffers, or overdue tasks.',
+    },
+  ];
+
+  const handleSendMessage = async (textToSend?: string) => {
+    const prompt = (textToSend || inputText).trim();
+    if (!prompt || isLoading) return;
+
+    const userMsg: ChatMessage = {
+      id: `msg_user_${Date.now()}`,
+      sender: 'user',
+      timestamp: new Date().toISOString(),
+      text: prompt,
+    };
+
+    const updatedHistory = [...state.chatHistory, userMsg];
+    setInputText('');
+    setIsLoading(true);
+
+    try {
+      const { response, modeUsed, providerName } = await generateAIPlanResponse(
+        prompt,
+        { ...state, chatHistory: updatedHistory },
+        state.aiConfig
+      );
+
+      const assistantMsg: ChatMessage = {
+        id: `msg_ai_${Date.now()}`,
+        sender: 'assistant',
+        timestamp: new Date().toISOString(),
+        text: response.message,
+        structuredResponse: response,
+      };
+
+      // Add proposed changes to proposalsHistory
+      const newProposals = [...(state.proposalsHistory || [])];
+      if (response.proposed_changes && response.proposed_changes.length > 0) {
+        response.proposed_changes.forEach((pc) => {
+          if (!newProposals.some((p) => p.id === pc.id)) {
+            newProposals.push(pc);
+          }
+        });
+      }
+
+      onUpdateState({
+        ...state,
+        chatHistory: [...updatedHistory, assistantMsg],
+        proposalsHistory: newProposals,
+      });
+
+      if (response.proposed_changes && response.proposed_changes.length > 0) {
+        onShowToast(
+          'info',
+          'New Actionable Proposals Generated',
+          `${response.proposed_changes.length} change proposal(s) available to review and apply.`
+        );
+      }
+    } catch (err: any) {
+      console.error('Error generating AI plan response:', err);
+      onShowToast('error', 'AI Generation Failed', err?.message || 'Check connection or API key');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const applyProposal = (proposal: ProposedChange) => {
+    let newState = { ...state };
+
+    if (proposal.section === 'guest') {
+      const newGuestCount = Number(proposal.afterValue);
+      if (!isNaN(newGuestCount) && newGuestCount > 0) {
+        newState = {
+          ...newState,
+          event: {
+            ...newState.event,
+            guests: {
+              ...newState.event.guests,
+              count: newGuestCount,
+              expectedAttendance: Math.round(newGuestCount * 0.95),
+            },
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      }
+    } else if (proposal.section === 'budget') {
+      // If afterValue has specific allocations (e.g. { photoAllocated, decorAllocated } or single value)
+      if (typeof proposal.afterValue === 'object') {
+        const decorDiff = proposal.afterValue.decorAllocated;
+        const cateringDiff = proposal.afterValue.cateringAllocated;
+        const photoDiff = proposal.afterValue.photoAllocated;
+
+        const updatedCategories = newState.categories.map((cat) => {
+          if (decorDiff !== undefined && (cat.name.toLowerCase().includes('decor') || cat.name.toLowerCase().includes('floral'))) {
+            return {
+              ...cat,
+              allocatedAmount: decorDiff,
+              allocationPercent: Math.round((decorDiff / newState.event.budget.total) * 100),
+            };
+          }
+          if (cateringDiff !== undefined && (cat.name.toLowerCase().includes('cater') || cat.name.toLowerCase().includes('food'))) {
+            return {
+              ...cat,
+              allocatedAmount: cateringDiff,
+              allocationPercent: Math.round((cateringDiff / newState.event.budget.total) * 100),
+            };
+          }
+          if (photoDiff !== undefined && cat.name.toLowerCase().includes('photo')) {
+            return {
+              ...cat,
+              allocatedAmount: photoDiff,
+              allocationPercent: Math.round((photoDiff / newState.event.budget.total) * 100),
+            };
+          }
+          return cat;
+        });
+
+        newState = {
+          ...newState,
+          categories: updatedCategories,
+          event: { ...newState.event, updatedAt: new Date().toISOString() },
+        };
+      }
+    }
+
+    // Mark proposal as applied in chat history and proposalsHistory
+    const updatedChatHistory = newState.chatHistory.map((msg) => {
+      if (msg.structuredResponse?.proposed_changes) {
+        return {
+          ...msg,
+          structuredResponse: {
+            ...msg.structuredResponse,
+            proposed_changes: msg.structuredResponse.proposed_changes.map((p) =>
+              p.id === proposal.id ? { ...p, applied: true } : p
+            ),
+          },
+        };
+      }
+      return msg;
+    });
+
+    const updatedProposalsHistory = (newState.proposalsHistory || []).map((p) =>
+      p.id === proposal.id ? { ...p, applied: true } : p
+    );
+
+    onUpdateState({
+      ...newState,
+      chatHistory: updatedChatHistory,
+      proposalsHistory: updatedProposalsHistory,
+    });
+
+    onShowToast('success', 'Changes Applied Successfully!', proposal.title);
+  };
+
+  return (
+    <div className="flex flex-col h-[calc(100vh-140px)] min-h-[600px] max-w-6xl mx-auto space-y-4 pb-6">
+      {/* Header Bar */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-purple-900 text-amber-300 flex items-center justify-center">
+            <Bot className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-slate-900 font-editorial">
+              Context-Aware AI Celebration Planner
+            </h2>
+            <p className="text-xs text-slate-500">
+              Continuously reasoning over {state.event.guests.count} guests,{' '}
+              {formatCurrency(state.event.budget.total, state.event.budget.currency, state.event.budget.numberFormat)} budget, and real-time constraints
+            </p>
+          </div>
+        </div>
+
+        {/* AI Status Badge */}
+        <div className="flex items-center gap-2">
+          {state.aiConfig.provider === 'offline' ? (
+            <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 rounded-full text-emerald-900 text-xs font-semibold">
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span>Offline Expert System (Deterministic &amp; Private)</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-3 py-1 bg-purple-50 border border-purple-200 rounded-full text-purple-900 text-xs font-semibold">
+              <Cpu className="w-4 h-4 text-purple-700" />
+              <span className="uppercase">{state.aiConfig.provider} Live</span>
+              <span className="text-slate-500 text-[10px]">({state.aiConfig.model})</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Quick Prompts Carousel */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none text-xs">
+        <span className="text-slate-400 font-medium shrink-0 flex items-center gap-1">
+          <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Try:
+        </span>
+        {quickPrompts.map((qp, idx) => (
+          <button
+            key={idx}
+            disabled={isLoading}
+            onClick={() => handleSendMessage(qp.text)}
+            className="shrink-0 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-medium transition-colors hover:border-purple-300 cursor-pointer text-left"
+          >
+            {qp.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Chat Messages Container */}
+      <div className="flex-1 bg-[#FAF9F6] border border-slate-200 rounded-2xl p-4 sm:p-6 overflow-y-auto space-y-6">
+        {state.chatHistory.map((msg) => {
+          const isUser = msg.sender === 'user';
+          const structured = msg.structuredResponse;
+
+          return (
+            <div
+              key={msg.id}
+              className={`flex items-start gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}
+            >
+              {/* Avatar */}
+              <div
+                className={`w-8 h-8 rounded-xl shrink-0 flex items-center justify-center shadow-xs ${
+                  isUser
+                    ? 'bg-slate-800 text-white'
+                    : 'bg-gradient-to-br from-purple-900 to-rose-900 text-amber-200'
+                }`}
+              >
+                {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
+              </div>
+
+              {/* Message Content */}
+              <div className={`max-w-3xl space-y-3 ${isUser ? 'items-end' : 'items-start'}`}>
+                {/* Main bubble */}
+                <div
+                  className={`p-4 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-2xs ${
+                    isUser
+                      ? 'bg-slate-900 text-white rounded-tr-none'
+                      : 'bg-white text-slate-800 border border-slate-200 rounded-tl-none space-y-3'
+                  }`}
+                >
+                  <p className="whitespace-pre-wrap">{msg.text}</p>
+
+                  {/* If assistant has structured reasoning */}
+                  {structured && (
+                    <div className="space-y-3 pt-2 border-t border-slate-100">
+                      {/* Reasoning Summary & Assumptions */}
+                      {structured.reasoning_summary && (
+                        <div className="p-3 bg-purple-50/70 border border-purple-100 rounded-xl space-y-1">
+                          <span className="text-[10px] font-bold text-purple-950 uppercase tracking-wider flex items-center gap-1">
+                            <Sparkles className="w-3.5 h-3.5 text-purple-700" />
+                            Planner Reasoning Summary
+                          </span>
+                          <p className="text-xs text-purple-900 leading-relaxed">
+                            {structured.reasoning_summary}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* Assumptions */}
+                      {structured.assumptions && structured.assumptions.length > 0 && (
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                            Operating Assumptions
+                          </span>
+                          <ul className="list-disc list-inside text-xs text-slate-600 space-y-0.5">
+                            {structured.assumptions.map((a, i) => (
+                              <li key={i}>{a}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Actionable Proposed Changes (The Core Requirement) */}
+                      {structured.proposed_changes && structured.proposed_changes.length > 0 && (
+                        <div className="space-y-2 pt-2">
+                          <span className="text-[10px] font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                            Actionable Proposals ({structured.proposed_changes.length})
+                          </span>
+
+                          <div className="space-y-2">
+                            {structured.proposed_changes.map((prop) => (
+                              <div
+                                key={prop.id}
+                                className={`p-3.5 rounded-xl border transition-all ${
+                                  prop.applied
+                                    ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                                    : 'bg-amber-50/60 border-amber-300 text-amber-950'
+                                }`}
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-bold">{prop.title}</span>
+                                      <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded uppercase bg-white border border-slate-200 text-slate-700">
+                                        {prop.section}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                                      {prop.description}
+                                    </p>
+                                  </div>
+
+                                  {prop.applied ? (
+                                    <span className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-white border border-emerald-300 px-2.5 py-1 rounded-lg">
+                                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                      Applied
+                                    </span>
+                                  ) : (
+                                    <button
+                                      onClick={() => applyProposal(prop)}
+                                      className="shrink-0 flex items-center gap-1 px-3 py-1.5 bg-purple-900 hover:bg-purple-950 text-white text-xs font-bold rounded-lg shadow-xs transition-colors cursor-pointer"
+                                    >
+                                      <Check className="w-3.5 h-3.5" />
+                                      <span>Apply Changes</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Risks with mitigations */}
+                      {structured.risks && structured.risks.length > 0 && (
+                        <div className="space-y-1.5 pt-1">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                            Detected Risks &amp; Mitigations
+                          </span>
+                          <div className="space-y-1.5">
+                            {structured.risks.map((r, i) => (
+                              <div
+                                key={i}
+                                className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-xs flex items-start gap-2"
+                              >
+                                <span
+                                  className={`px-1.5 py-0.2 text-[9px] font-bold rounded uppercase mt-0.5 ${
+                                    r.severity === 'high'
+                                      ? 'bg-rose-100 text-rose-800'
+                                      : r.severity === 'medium'
+                                      ? 'bg-amber-100 text-amber-800'
+                                      : 'bg-blue-100 text-blue-800'
+                                  }`}
+                                >
+                                  {r.severity}
+                                </span>
+                                <div>
+                                  <strong className="text-slate-800 font-semibold">{r.issue}</strong>
+                                  <span className="text-slate-500 block mt-0.5">
+                                    Mitigation: {r.mitigation}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <span className="text-[10px] text-slate-400 block px-1">
+                  {new Date(msg.timestamp).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+
+        {isLoading && (
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-purple-900 text-amber-300 flex items-center justify-center animate-pulse">
+              <Bot className="w-4 h-4" />
+            </div>
+            <div className="bg-white p-3.5 rounded-2xl rounded-tl-none border border-slate-200 text-xs text-slate-500 flex items-center gap-2">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin text-purple-700" />
+              <span>Analyzing constraints, recalculating trade-offs and drafting plan...</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Input Box */}
+      <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSendMessage();
+          }}
+          className="flex items-center gap-2"
+        >
+          <input
+            type="text"
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            placeholder="Ask about budget trade-offs, changing headcount, timeline adjustments, or run-sheet..."
+            className="flex-1 text-xs sm:text-sm px-3 py-2 border-0 outline-hidden focus:ring-0 text-slate-800 placeholder-slate-400 bg-transparent"
+          />
+          <button
+            type="submit"
+            disabled={!inputText.trim() || isLoading}
+            className="px-4 py-2 bg-gradient-to-r from-purple-900 to-rose-900 text-white rounded-xl text-xs font-bold hover:from-purple-950 hover:to-rose-950 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-xs cursor-pointer"
+          >
+            <span>Send</span>
+            <Send className="w-3.5 h-3.5" />
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};

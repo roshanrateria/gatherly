@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="gGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#581C87" />
+      <stop offset="50%" stop-color="#831843" />
+      <stop offset="100%" stop-color="#D97706" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#F59E0B" />
+      <stop offset="100%" stop-color="#FCD34D" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#18181B" />
+  <rect x="2" y="2" width="60" height="60" rx="14" stroke="url(#gGrad)" stroke-width="2" fill="#1C1917" />
+  <!-- Stylized G with celebration starburst -->
+  <path d="M38 20C34.5 17.5 29.5 17.5 25.5 19.8C20.5 22.8 18 28.5 19.2 34.2C20.5 40.2 25.8 44.5 32 44.5C37.5 44.5 42.5 41.5 44 36H32V30.5H49.5C50 33 50 35.8 49.5 38.5C48 45 41.5 50 33 50C22.5 50 14 42 14 31.5C14 21.5 21.8 13.5 31.8 13.5C36.8 13.5 41.5 15.5 45 19L38 20Z" fill="url(#gGrad)" />
+  <!-- Sparkle star -->
+  <path d="M46 16L47.5 11L49 16L54 17.5L49 19L47.5 24L46 19L41 17.5L46 16Z" fill="url(#goldGrad)" />
+</svg>

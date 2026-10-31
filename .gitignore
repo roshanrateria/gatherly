@@ -1,0 +1,39 @@
+# Dependencies
+node_modules
+dist
+dist-ssr
+*.local
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+.agon-env
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor & OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.vite-source-tags.js
+
+# OS artifacts (Windows)
+Thumbs.db
+desktop.ini
+
+# Demo recorder output (scripts/record-demo.mjs default OUT_DIR)
+recordings/
+gatherly-demo-raw.webm
