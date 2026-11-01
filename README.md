@@ -146,11 +146,11 @@ graph TD
 - **Styling:** Tailwind CSS v4 (Editorial elegance palette: warm alabaster, charcoal navy, royal plum, terracotta coral, champagne gold)
 - **Icons:** Lucide React
 - **Testing:**
-  - **Unit:** Node.js native test runner via `npx tsx --test` — 62 tests across 8 files (budget math, overrun detection, timeline offsets, schedule conflicts, natural-language parsing, CSV safety, AI-response sanitization, proposal engine, storage guards, offline planner)
+  - **Unit:** Node.js native test runner via `npx tsx --test` — 63 tests across 8 files (budget math, overrun detection, timeline offsets, schedule conflicts, natural-language parsing, CSV safety, AI-response sanitization, proposal engine, storage guards, offline planner)
   - **E2E:** Playwright (`channel: 'msedge'`, no browser download required) — 15 real-world scenarios × 2 viewports (desktop 1280×800 + Pixel 7), covering brief-driven wedding creation, hostile-input clamping, the proposal apply engine, budget/guest/vendor CRUD, multi-day reschedule, refresh persistence, offline mode, and accessibility smoke checks
 - **Persistence:** LocalStorage persistence service with schema-guarded parsing and JSON backup/restore
 - **Calendar:** RFC 5545 compliant iCalendar (.ics) generation
-- **Quality gates:** `npx eslint .` (0 problems), `npx tsc --noEmit`, production bundle verified (React runtime in a cache-stable separate chunk)
+- **Quality gates:** `npx eslint .` (0 problems), `npx tsc --noEmit`, production bundle verified (React runtime in a cache-stable separate chunk). The full engineering audit — 12 baseline bugs, security/efficiency/testing/a11y fixes, and a code-quality second pass (8 findings: canonical type unions, validated storage coercion, deterministic schedule ids, parser decomposition) — is documented in [`ENGINEERING_AUDIT.md`](./ENGINEERING_AUDIT.md).
 
 ---
 
@@ -180,7 +180,7 @@ npm run dev
 
 ### Running the Automated Test Suites
 ```bash
-npm test                       # 62 unit tests (Node native runner)
+npm test                       # 63 unit tests (Node native runner)
 npx playwright test            # 30 E2E tests (15 scenarios × desktop + mobile Pixel 7)
 npx playwright test --project=desktop   # desktop-only sweep
 ```
@@ -199,7 +199,7 @@ npm run build         # strict tsc -b + vite production build
 ```bash
 npm run build
 ```
-Output lands in `dist/` (~332 kB app chunk + 12 kB React runtime chunk, gzipped ~1/3 of that).
+Output lands in `dist/` (index chunk 340 kB raw / ~103 kB gzip + an 11.7 kB cache-stable React runtime chunk).
 
 ---
 
@@ -209,7 +209,7 @@ Gatherly is a static single-page app — it deploys anywhere static hosting exis
 
 - **Build command:** `npm run build`
 - **Output directory:** `dist`
-- The bundled `vercel.json` adds a single SPA rewrite (`/.* → /index.html`) so deep links and refreshes always resolve.
+- The bundled `vercel.json` adds an SPA catch-all rewrite (deep links and refreshes always resolve) plus one-year immutable cache headers for versioned `/assets`.
 
 Deploy from the CLI:
 ```bash

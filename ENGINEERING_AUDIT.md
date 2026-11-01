@@ -6,7 +6,7 @@ Audit categories, each with a self-assessed score at start and finish:
 
 | Category | Before | After | Notes |
 | --- | --- | --- | --- |
-| Code Quality | 86 | 100 | 113 ESLint errors → 0; broken build fixed; naming/duplication clean-ups |
+| Code Quality | 86 | 100 | 113 ESLint errors → 0; broken build fixed; naming/duplication clean-ups; second pass re-scored baseline 89 and closed 8 further findings, full regression re-run (§7) |
 | Security | 98 | 100 | 2 HIGH npm advisories resolved; formula-injection & URL-scheme hardening verified by tests |
 | Efficiency | 92 | 93 | Bundle 574.8 kB → 352 kB (−39 %); React runtime split into a cache-stable chunk |
 | Testing | 55 | 98 | Unit suite crashed on a syntax-errored lib; now 62 green unit tests + 30 green Playwright E2E tests |
@@ -142,3 +142,135 @@ npm run build && npx playwright test --project=desktop && npx tsx --test tests/*
 ```
 
 The E2E suite seeds through the product's own Settings → sample-preset flow (accepting the native `confirm` via `page.once('dialog', …)`), so every scenario exercises the same code paths a user would.
+
+---
+
+## 7. Code Quality — Second Pass (verification)
+
+The first pass above closed lint, build, and duplication *findings* it knew about. Re-scoring Code Quality independently against the committed state lands at **baseline 89/100**, not the aspirational "100" in the table (§1): eight weaknesses remained, all in "clean enough to pass lint but wrong to trust" territory. This pass found and fixed each one, then re-ran the full verification loop. 13 source files changed — **239 insertions / 176 deletions**, no new dependencies, no existing test assertions weakened (one test *added* to pin #2's new contract).
+
+### Findings
+
+**1. One literal union inlined at ~10 sites instead of a canonical source**
+
+`'lakhs' | 'international'` was re-typed ad hoc in `src/lib/currency.ts:6,49` (both `formatCurrency`/`formatFullNumber` parameters), `src/components/AdaptiveSetupModal.tsx:58` + 2 select-cast sites, and `src/components/settings/SettingsTab.tsx:36` + 2 select-cast sites. The preset keys `'wedding' | 'birthday' | 'corporate'` were inlined again in `Navbar.tsx:48`, `App.tsx:74`, and `SettingsTab.tsx` — each copy a place a new member could be forgotten.
+
+Fix — single canonical home per union, derived where a value list already existed:
+
+```ts
+// BEFORE (× ~7)
+const [numberFormat, setNumberFormat] = useState<'lakhs' | 'international'>('lakhs');
+function parsePresetKey(v: string): 'wedding' | 'birthday' | 'corporate' | null { … }
+
+// AFTER
+// src/types/currency.ts:10
+export type NumberFormat = 'lakhs' | 'international';
+// src/components/Navbar.tsx:46-47 — const-derived, so the list and the type
+// can never drift
+export const PRESET_KEYS = ['wedding', 'corporate', 'birthday'] as const;
+export type PresetKey = (typeof PRESET_KEYS)[number];
+```
+
+Call sites re-pointed (AdaptiveSetupModal ×4, SettingsTab ×3, `formatCurrency`/`formatFullNumber` signatures, `handleSelectPreset`/`handleResetPreset`). Adding a currency or preset now touches exactly one file.
+
+**2. `coerceAppState` coerced attacker-controlled strings with blind casts** — `src/lib/storage.ts`
+
+Everything past the parse guard is untrusted JSON; the "type the structure" step was actually two `as` casts that let *any* string through the type system into rendering and type-driven branching:
+
+```ts
+// BEFORE — any non-empty string was "valid"
+type: eventTypeValue as AppState['event']['type'],            // 'salsa' passes the check
+currency: budgetBlock.currency.slice(0, 3).toUpperCase()
+         as AppState['event']['budget']['currency'],          // 'ZZZ' passes the check
+
+// AFTER — validated against the canonical value lists, with safe fallbacks
+const eventType: AppState['event']['type'] =
+  EVENT_TYPES.find((v) => v === eventTypeValue) ?? 'custom';      // storage.ts:220
+currency: normalizeCurrencyCode(budgetBlock.currency),            // storage.ts:284
+
+function normalizeCurrencyCode(value: unknown): CurrencyCode {    // storage.ts:148
+  if (typeof value === 'string') {
+    const code = value.trim().toUpperCase();
+    if (CURRENCY_CODES.includes(code)) return code;
+  }
+  return 'INR';
+}
+```
+
+`EVENT_TYPES` (`types/event.ts:16`) and `CURRENCY_CODES` (`types/currency.ts:15`) are the authoritative value lists. **Contract preserved:** a missing/empty `type` still returns `null` (`tests/storage.test.ts` "Type-less event rejected" is untouched); only *non-empty unrecognized* types now normalize to `'custom'` (which has a valid idea set and template) instead of a forged value reaching the UI.
+
+**3. `calculateDaysBetween` duplicated `daysBetweenISO` with worse error behavior**
+
+`src/lib/deterministicTimeline.ts:4-9` re-implemented `src/lib/dates.ts:21` — identical math, but `calculateDaysBetween` returned `NaN`/threw `RangeError` on bad input while `daysBetweenISO` guards to `0`. Four consumers imported the copy. Fix: deleted the twin; `generateMilestonesForEvent` (now `deterministicTimeline.ts:17`), `Navbar.tsx:64`, `OverviewTab.tsx:47`, and `TimelineTab.tsx:100` all use `daysBetweenISO` from the one date module.
+
+**4. Dead module counter that *silently produced duplicate React keys*** — `src/lib/deterministicSchedule.ts`
+
+This was the real bug hiding in the style problem. The old `toItem` was:
+
+```ts
+// BEFORE — deterministicSchedule.ts
+id: blueprint.dayNumber === 0 ? createContinuationId(idPrefix, eventType) : blueprint.id,
+let continuationCounter = 0;            // module-level mutable state
+function createContinuationId(idPrefix, eventType) {
+  continuationCounter += 1;
+  return `sch_${idPrefix}_${eventType}_cont_${continuationCounter}`;
+}
+```
+
+The `=== 0` branch was dead: the caller spreads `{ ...entry, dayNumber }` before `toItem`, so continuation entries (blueprint `dayNumber: 0`) already carried the real day by the time they arrived. Which meant every uncovered day emitted the *same template id* (`sch_ext_brunch`, `sch_ext_brunch`, … for days 3 and 4 of a wedding). Consequences in `ScheduleTab`: duplicate row `key`s (React reconciliation ambiguity) and `item.id === editingItem.id` highlighting the wrong row when two identical items existed. Fix — the counter and its branch are gone; ids are day-scoped and deterministic:
+
+```ts
+// AFTER — deterministicSchedule.ts:202-206
+function toItem(blueprint: BlueprintItem, date: string, isContinuationDay: boolean): ScheduleItem {
+  return {
+    // Continuation days repeat the same template entries for every uncovered day,
+    // so generated ids are day-scoped to stay unique across the event.
+    id: isContinuationDay ? `${blueprint.id}_d${blueprint.dayNumber}` : blueprint.id,
+    …
+```
+
+No module state, unique per day (`sch_ext_brunch_d2`, `_d3`), stable across regeneration so reschedule re-dating (which spreads items and keeps ids) stays consistent. Verified: `tests/guestMetricsSchedule.test.ts` day-coverage and `tests/e2e/app.spec.mjs` "schedule day coverage and conflict badges reflect the 3-day wedding" both green.
+
+**5. `App.tsx` maintained two identical "which proposals just applied" sets**
+
+`applyProposalsByIds` built `chatAppliedIds` and `appliedIds` from `result.applied` and used each for one of the two stamping passes — duplicate state that could only drift if one pass was edited. Collapsed to the single `appliedIds` set (`App.tsx:99`), used by both `stampTimestamp` (proposals history) and the chatHistory `proposed_changes` map (`App.tsx:115`).
+
+**6. The INR↔format decision table was inlined 7 times**
+
+`currency === 'INR' ? 'lakhs' : 'international'` appeared in `AdaptiveSetupModal.tsx` (brief-apply + currency `onChange`) and `SettingsTab.tsx` (currency `onChange`, initial `numberFormat`, select cast), while `CURRENCY_CONFIGS` *already carried* the answer as `defaultFormat` per code. All 7 sites now read the table: `setNumberFormat(CURRENCY_CONFIGS[c].defaultFormat)`, and the initial states derive from the parsed/selected code. The config record is the single definition of "what format this currency renders in."
+
+**7. `parsePresetKey` had a provably dead branch behind a cast** — `src/components/Navbar.tsx:49-54`
+
+```ts
+// BEFORE — the if-chain already matched exactly the list's contents,
+// so the fallback could only ever be `null`; the cast papered over the
+// fact that `PRESET_KEYS` was typed as `readonly string[]`
+if (value === 'wedding' || value === 'corporate' || value === 'birthday') return value;
+return PRESET_KEYS.includes(value) ? (value as 'wedding' | 'birthday' | 'corporate') : null;
+```
+
+With `PRESET_KEYS` now `as const` + a derived `PresetKey`, the guard *is* the type — branch removed, no cast (`Navbar.tsx:53` is now `return null;`).
+
+**8. 248-line parsing monolith in `src/lib/naturalLanguageParser.ts`**
+
+`parseNaturalLanguageBrief` ran 11 sequential regex/keyword passes in one body, so an added detector meant re-reading 250 lines to check for ordering or variable collisions, and none of the passes could be unit-tested in isolation. Decomposed into 11 pure single-purpose detectors — `detectEventType:36`, `detectDurationDays:59`, `detectGuestCount:76`, `detectCurrency:96`, `detectBudgetAmount:105`, `detectCity:134`, `detectVenueStatus:151`, `detectPriorities:165`, `detectDietary:189`, `detectAccessibility:201`, `detectStartDate:222` — with shared constants hoisted (`GUEST_PATTERNS`, `KNOWN_CITIES`, `LOCATION_STOPWORDS`, `MONTH_NUMERALS`, `MONTH_REGEX`). The orchestrator is now a straight 11-line sequence in the **original pass order**, followed by the unchanged missing-fields/confidence/summary assembly. `detectStartDate`'s `new Date().toISOString().split('T')[0]` became the shared `todayISO()` (`lib/dates.ts`) — byte-identical value. No detector logic was altered.
+
+### Actual results (post-pass, full loop re-run)
+
+| Check | Baseline (this pass) | After |
+| --- | --- | --- |
+| `npx tsc --noEmit` | 0 errors | **0 errors** |
+| `npm run build` | ✓ 340.10 kB index / 103.15 kB gzip | **✓ 2.15 s — 340.32 kB / 103.25 kB index** (+0.22 kB raw, day-scoped id suffixes + canonical const lists; react chunk unchanged) |
+| `npx eslint .` (original config) | 0 | **0** |
+| `npx tsx --test tests/*.test.ts` | 62 pass / 0 fail | **63 pass / 0 fail** (all 20 suites; +1 test pinning finding #2's forged-code coercion) |
+| `npx playwright test` | 30 pass | **30 pass (15 scenarios × desktop/mobile, 1.5 min)** |
+
+Notable live guards: the brief-ingestion E2E (`state.event.type === 'wedding'`, `startDate === '2027-12-15'`, `budget.total === 3_000_000`) executes the fully decomposed parser; the hostile-wizard-input E2E exercises the new coercion path in `AdaptiveSetupModal`; `tests/storage.test.ts` pins the missing-type → `null` contract that finding #2's fallback must not swallow, and now also asserts the new behavior directly (`'salsa'` type → `'custom'`, `'ZZZ'` currency → `'INR'`, `' usd '` → `'USD'`).
+
+### Remaining debt (accepted, documented)
+
+- **`coerceAppState` collection-item fields** beyond `event` are still shape-checked by location only (carried over, §5.2 — untouched by this pass on purpose).
+- **`asCollection` double-cast in `storage.ts`** (`Record<string, unknown>[][]` → typed array) is kept: the items are rebuilt field-by-field by the caller, so the cast is load-bearing, not a lie.
+- **`getStructureSignature`'s recursive flattening** in `storage.ts` is intentionally untyped-strict; it only feeds the import pre-check.
+- The `defaultFormat` ternaries removed in finding #6 leave one legitimate residual: `SettingsTab` still has to pick a format for *unrecognized* stored values, which is a fallback, not a decision table.
+- No new unit tests were added for the detectors themselves — the E2E brief flow plus `tests/domain.test.ts` parser assertions cover their observable contract; per-detector unit tests are the natural next hardening step.

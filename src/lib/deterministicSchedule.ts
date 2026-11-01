@@ -199,14 +199,11 @@ function continuationBlueprint(eventType: EventType): BlueprintItem[] {
   return eventType === 'corporate' ? CONTINUATION_DAY_CORPORATE : CONTINUATION_DAY;
 }
 
-function toItem(
-  blueprint: BlueprintItem,
-  eventType: EventType,
-  date: string,
-  idPrefix: string
-): ScheduleItem {
+function toItem(blueprint: BlueprintItem, date: string, isContinuationDay: boolean): ScheduleItem {
   return {
-    id: blueprint.dayNumber === 0 ? createContinuationId(idPrefix, eventType) : blueprint.id,
+    // Continuation days repeat the same template entries for every uncovered day,
+    // so generated ids are day-scoped to stay unique across the event.
+    id: isContinuationDay ? `${blueprint.id}_d${blueprint.dayNumber}` : blueprint.id,
     dayNumber: blueprint.dayNumber,
     date,
     startTime: blueprint.startTime,
@@ -220,13 +217,6 @@ function toItem(
   };
 }
 
-let continuationCounter = 0;
-
-function createContinuationId(idPrefix: string, eventType: EventType): string {
-  continuationCounter += 1;
-  return `sch_${idPrefix}_${eventType}_cont_${continuationCounter}`;
-}
-
 export function generateDefaultSchedule(
   eventType: EventType,
   startDateStr: string,
@@ -236,7 +226,6 @@ export function generateDefaultSchedule(
   const blueprint = pickBlueprint(eventType, totalDays);
   const coveredDays = new Set(blueprint.map(item => item.dayNumber));
   const continuation = continuationBlueprint(eventType);
-  const idPrefix = 'gen';
   const items: ScheduleItem[] = [];
 
   const pushDay = (dayNumber: number, date: string): void => {
@@ -244,7 +233,7 @@ export function generateDefaultSchedule(
       ? blueprint.filter(item => item.dayNumber === dayNumber)
       : continuation;
     dayBlueprint.forEach((entry) => {
-      items.push(toItem({ ...entry, dayNumber }, eventType, date, idPrefix));
+      items.push(toItem({ ...entry, dayNumber }, date, !coveredDays.has(dayNumber)));
     });
   };
 

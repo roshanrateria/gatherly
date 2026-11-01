@@ -4,7 +4,7 @@ import { loadStoredState, saveStateToStorage } from './lib/storage';
 import { createSampleWedding, createSampleCorporate, createSampleBirthday } from './lib/sampleEvents';
 import { applyProposalsToState } from './lib/proposals';
 import { createId } from './lib/createId';
-import { Navbar, ActiveTab } from './components/Navbar';
+import { Navbar, ActiveTab, PresetKey } from './components/Navbar';
 import { AdaptiveSetupModal } from './components/AdaptiveSetupModal';
 import { ProposalReviewModal } from './components/ProposalReviewModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
@@ -71,7 +71,7 @@ export function App() {
     saveStateToStorage(newState);
   };
 
-  const handleSelectPreset = (presetKey: 'wedding' | 'birthday' | 'corporate') => {
+  const handleSelectPreset = (presetKey: PresetKey) => {
     let preset: AppState;
     if (presetKey === 'wedding') preset = createSampleWedding();
     else if (presetKey === 'corporate') preset = createSampleCorporate();
@@ -104,7 +104,6 @@ export function App() {
       return { ...proposal, applied: true, ...(appliedAt ? { timestamp: appliedAt } : {}) };
     };
 
-    const chatAppliedIds = new Set(result.applied.map((p) => p.id));
     const updatedProposalsHistory = (result.state.proposalsHistory || []).map(stampTimestamp);
     const updatedChatHistory = (result.state.chatHistory || []).map((msg) => {
       if (msg.structuredResponse?.proposed_changes) {
@@ -113,7 +112,7 @@ export function App() {
           structuredResponse: {
             ...msg.structuredResponse,
             proposed_changes: msg.structuredResponse.proposed_changes.map((p) =>
-              chatAppliedIds.has(p.id) ? { ...p, applied: true } : p
+              appliedIds.has(p.id) ? { ...p, applied: true } : p
             ),
           },
         };

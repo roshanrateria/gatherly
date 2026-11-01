@@ -103,4 +103,28 @@ describe('coerceAppState sanitization', () => {
     assert.strictEqual(coerceAppState(42), null);
     assert.strictEqual(coerceAppState(['array', 'not', 'object']), null);
   });
+
+  it('validates untrusted type and currency strings against the canonical lists', () => {
+    const forgedType = coerceAppState({ event: { title: 'Forged', type: 'salsa' } });
+    assert.ok(forgedType, 'Forged-type event still coerces (only missing type is rejected)');
+    if (forgedType) {
+      assert.strictEqual(forgedType.event.type, 'custom', 'Unrecognized type normalizes to custom');
+    }
+
+    const forgedCurrency = coerceAppState({
+      event: { title: 'X', type: 'wedding', budget: { total: 100, currency: 'ZZZ' } },
+    });
+    assert.ok(forgedCurrency);
+    if (forgedCurrency) {
+      assert.strictEqual(forgedCurrency.event.budget.currency, 'INR', 'Unknown currency code falls back to INR');
+    }
+
+    const trimmableCurrency = coerceAppState({
+      event: { title: 'X', type: 'wedding', budget: { total: 100, currency: ' usd ' } },
+    });
+    assert.ok(trimmableCurrency);
+    if (trimmableCurrency) {
+      assert.strictEqual(trimmableCurrency.event.budget.currency, 'USD', 'Padded/cased codes still match');
+    }
+  });
 });

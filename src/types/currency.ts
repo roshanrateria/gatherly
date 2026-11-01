@@ -1,11 +1,25 @@
+/**
+ * Display preference for amounts: `'lakhs'` renders INR in the Indian
+ * thousands system (₹45 L, ₹1.5 Cr) while `'international'` always uses
+ * `Intl.NumberFormat` with the currency's locale.
+ *
+ * Canonical source for the union; previously the same two-literal union was
+ * inlined at ~10 call sites (types/event.ts, lib/currency.ts×2, lib/storage.ts,
+ * components/AdaptiveSetupModal.tsx×4, components/settings/SettingsTab.tsx×3).
+ */
+export type NumberFormat = 'lakhs' | 'international';
+
 export type CurrencyCode = 'INR' | 'USD' | 'EUR' | 'GBP' | 'AED' | 'CAD' | 'AUD' | 'SGD';
+
+/** Canonical order of supported currency codes, for type-safe coercion of untrusted input. */
+export const CURRENCY_CODES: readonly CurrencyCode[] = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'CAD', 'AUD', 'SGD'];
 
 export interface CurrencyConfig {
   code: CurrencyCode;
   symbol: string;
   name: string;
   locale: string;
-  defaultFormat: 'lakhs' | 'international';
+  defaultFormat: NumberFormat;
   rateToInr: number; // approximate benchmark for conversion
 }
 

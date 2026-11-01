@@ -12,9 +12,10 @@ import {
   Trash2,
 } from 'lucide-react';
 import { AppState, AIConfig, AIProviderType } from '../../types/index';
-import { CurrencyCode, CURRENCY_CONFIGS } from '../../types/currency';
+import { CurrencyCode, CURRENCY_CONFIGS, NumberFormat } from '../../types/currency';
 import { exportStateToJson, validateAndImportState, clearAllStoredData } from '../../lib/storage';
 import { createSampleWedding, createSampleBirthday, createSampleCorporate } from '../../lib/sampleEvents';
+import { PresetKey } from '../Navbar';
 
 interface SettingsTabProps {
   state: AppState;
@@ -33,7 +34,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
   const [discloseConsent, setDiscloseConsent] = useState(aiConfig.discloseDataSharing || false);
 
   const [currency, setCurrency] = useState<CurrencyCode>(event.budget.currency || 'INR');
-  const [numberFormat, setNumberFormat] = useState<'lakhs' | 'international'>(
+  const [numberFormat, setNumberFormat] = useState<NumberFormat>(
     event.budget.numberFormat || 'lakhs'
   );
 
@@ -114,7 +115,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
     );
   };
 
-  const handleResetPreset = (preset: 'wedding' | 'corporate' | 'birthday') => {
+  const handleResetPreset = (preset: PresetKey) => {
     if (confirm(`Load sample ${preset} event? Current unsaved modifications will be replaced.`)) {
       let sample: AppState;
       if (preset === 'wedding') sample = createSampleWedding();
@@ -374,7 +375,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
               onChange={(e) => {
                 const c = e.target.value as CurrencyCode;
                 setCurrency(c);
-                setNumberFormat(c === 'INR' ? 'lakhs' : 'international');
+                setNumberFormat(CURRENCY_CONFIGS[c].defaultFormat);
               }}
               className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
             >
@@ -393,7 +394,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
             <select
               id="settings-number-format"
               value={numberFormat}
-              onChange={(e) => setNumberFormat(e.target.value as 'lakhs' | 'international')}
+              onChange={(e) => setNumberFormat(e.target.value as NumberFormat)}
               className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
             >
               <option value="lakhs">Indian System (e.g. ₹45.00 L, ₹1.50 Cr)</option>

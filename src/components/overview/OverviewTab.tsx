@@ -11,10 +11,9 @@ import {
 } from 'lucide-react';
 import { AppState } from '../../types/index';
 import { calculateBudgetSummary } from '../../lib/deterministicBudget';
-import { calculateDaysBetween } from '../../lib/deterministicTimeline';
 import { formatCurrency } from '../../lib/currency';
 import { budgetBasisGuestCount, computeGuestMetrics } from '../../lib/guestMetrics';
-import { todayISO } from '../../lib/dates';
+import { daysBetweenISO, todayISO } from '../../lib/dates';
 import { ActiveTab } from '../Navbar';
 
 interface OverviewTabProps {
@@ -45,7 +44,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   const numFormat = event.budget.numberFormat;
 
   const todayStr = todayISO();
-  const daysRemaining = calculateDaysBetween(todayStr, event.startDate);
+  const daysRemaining = daysBetweenISO(todayStr, event.startDate);
 
   // Deterministic calculations (roster-aware guest basis, never party size)
   const budgetSummary = calculateBudgetSummary(

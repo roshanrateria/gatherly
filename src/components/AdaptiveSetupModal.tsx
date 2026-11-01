@@ -8,7 +8,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { EventType, VenueStatus, EventDetails, AppState } from '../types/index';
-import { CurrencyCode, CURRENCY_CONFIGS } from '../types/currency';
+import { CurrencyCode, CURRENCY_CONFIGS, NumberFormat } from '../types/currency';
 import { parseNaturalLanguageBrief, ParsedEventBrief } from '../lib/naturalLanguageParser';
 import { generateDefaultCategoriesForEvent } from '../lib/deterministicBudget';
 import { generateMilestonesForEvent } from '../lib/deterministicTimeline';
@@ -55,7 +55,7 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
   const [guestCount, setGuestCount] = useState(250);
   const [budgetAmount, setBudgetAmount] = useState(4500000);
   const [currency, setCurrency] = useState<CurrencyCode>(currentCurrency || 'INR');
-  const [numberFormat, setNumberFormat] = useState<'lakhs' | 'international'>('lakhs');
+  const [numberFormat, setNumberFormat] = useState<NumberFormat>('lakhs');
   const [style, setStyle] = useState('Royal Heritage & Warm Traditional Elegance');
   const [priorities, setPriorities] = useState<string[]>([
     'Food & Catering',
@@ -85,7 +85,7 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
       if (parsed.budgetAmount) setBudgetAmount(parsed.budgetAmount);
       if (parsed.currency) {
         setCurrency(parsed.currency);
-        setNumberFormat(parsed.currency === 'INR' ? 'lakhs' : 'international');
+        setNumberFormat(CURRENCY_CONFIGS[parsed.currency].defaultFormat);
       }
       if (parsed.venueStatus) setVenueStatus(parsed.venueStatus);
       if (parsed.priorities.length > 0) setPriorities(parsed.priorities);
@@ -643,7 +643,7 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
                         onChange={(e) => {
                           const c = e.target.value as CurrencyCode;
                           setCurrency(c);
-                          setNumberFormat(c === 'INR' ? 'lakhs' : 'international');
+                          setNumberFormat(CURRENCY_CONFIGS[c].defaultFormat);
                         }}
                         className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
                       >
@@ -662,7 +662,7 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
                       <select
                         id="setup-number-format"
                         value={numberFormat}
-                        onChange={(e) => setNumberFormat(e.target.value as 'lakhs' | 'international')}
+                        onChange={(e) => setNumberFormat(e.target.value as NumberFormat)}
                         className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
                       >
                         <option value="lakhs">Indian System (Lakhs &amp; Crores, e.g. ₹45 L)</option>

@@ -17,11 +17,10 @@ import {
   Building2,
 } from 'lucide-react';
 import { AppState } from '../types/index';
-import { calculateDaysBetween } from '../lib/deterministicTimeline';
 import { calculateBudgetSummary } from '../lib/deterministicBudget';
 import { detectScheduleConflicts } from '../lib/deterministicSchedule';
 import { budgetBasisGuestCount } from '../lib/guestMetrics';
-import { todayISO } from '../lib/dates';
+import { daysBetweenISO, todayISO } from '../lib/dates';
 
 export type ActiveTab =
   | 'overview'
@@ -40,17 +39,18 @@ interface NavbarProps {
   activeTab: ActiveTab;
   onTabChange: (tab: ActiveTab) => void;
   onOpenSetup: () => void;
-  onSelectPreset: (presetKey: 'wedding' | 'birthday' | 'corporate') => void;
+  onSelectPreset: (presetKey: PresetKey) => void;
   unappliedProposalsCount: number;
 }
 
-const PRESET_KEYS: readonly string[] = ['wedding', 'corporate', 'birthday'];
+export const PRESET_KEYS = ['wedding', 'corporate', 'birthday'] as const;
+export type PresetKey = (typeof PRESET_KEYS)[number];
 
-function parsePresetKey(value: string): 'wedding' | 'birthday' | 'corporate' | null {
+function parsePresetKey(value: string): PresetKey | null {
   if (value === 'wedding' || value === 'corporate' || value === 'birthday') {
     return value;
   }
-  return PRESET_KEYS.includes(value) ? (value as 'wedding' | 'birthday' | 'corporate') : null;
+  return null;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -62,7 +62,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   unappliedProposalsCount,
 }) => {
   const todayStr = todayISO();
-  const daysUntil = calculateDaysBetween(todayStr, state.event.startDate);
+  const daysUntil = daysBetweenISO(todayStr, state.event.startDate);
 
   const budgetSummary = calculateBudgetSummary(
     state.event.budget.total,

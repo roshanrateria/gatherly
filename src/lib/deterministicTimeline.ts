@@ -1,12 +1,6 @@
 import { Milestone, Task, TaskPriority } from '../types/timeline';
 import { EventType } from '../types/event';
-
-export function calculateDaysBetween(date1: string, date2: string): number {
-  const d1 = new Date(date1);
-  const d2 = new Date(date2);
-  const diffTime = d2.getTime() - d1.getTime();
-  return Math.round(diffTime / (1000 * 60 * 60 * 24));
-}
+import { daysBetweenISO } from './dates';
 
 export function formatDueDateFromOffset(eventDateStr: string, daysBeforeEvent: number): string {
   const eventDate = new Date(eventDateStr);
@@ -20,7 +14,7 @@ export function generateMilestonesForEvent(
   startDateStr: string
 ): { milestones: Milestone[]; tasks: Task[] } {
   const todayStr = new Date().toISOString().split('T')[0];
-  const totalLeadDays = Math.max(14, calculateDaysBetween(todayStr, startDateStr));
+  const totalLeadDays = Math.max(14, daysBetweenISO(todayStr, startDateStr));
 
   // Scale offset factor: standard lead time is 180 days (6 months)
   // If lead time is 60 days, offsets will scale smoothly so nothing is scheduled in the past if possible

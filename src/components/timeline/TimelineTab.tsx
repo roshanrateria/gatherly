@@ -10,14 +10,13 @@ import {
 } from 'lucide-react';
 import { AppState, Milestone, TaskPriority } from '../../types/index';
 import {
-  calculateDaysBetween,
   recalculateTimelineForNewDate,
   checkMilestoneDependencies,
 } from '../../lib/deterministicTimeline';
 import { recalculateScheduleForNewDate } from '../../lib/deterministicSchedule';
 import { generateMilestonesIcs, downloadIcsFile } from '../../lib/icsExport';
 import { createId } from '../../lib/createId';
-import { addDaysISO, todayISO } from '../../lib/dates';
+import { addDaysISO, daysBetweenISO, todayISO } from '../../lib/dates';
 import { ModalShell } from '../ui/ModalShell';
 
 interface TimelineTabProps {
@@ -98,7 +97,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ state, onUpdateState, 
     e.preventDefault();
     if (!mTitle.trim()) return;
 
-    const daysBefore = calculateDaysBetween(mDueDate, event.startDate);
+    const daysBefore = daysBetweenISO(mDueDate, event.startDate);
 
     if (editingMilestone) {
       const updated = milestones.map((m) =>

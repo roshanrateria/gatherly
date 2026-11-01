@@ -1,11 +1,13 @@
-import { CurrencyCode, CURRENCY_CONFIGS } from '../types/currency';
+import { CurrencyCode, CURRENCY_CONFIGS, NumberFormat } from '../types/currency';
 
 export function formatCurrency(
   amount: number,
   currencyCode: CurrencyCode = 'INR',
-  formatPreference: 'lakhs' | 'international' = 'lakhs'
+  formatPreference: NumberFormat = 'lakhs'
 ): string {
-  if (isNaN(amount) || amount === null || amount === undefined) {
+  // One guard covers NaN, Infinity and untyped runtime null/undefined: any
+  // non-finite input renders as zero rather than "NaN"/"∞" in the UI.
+  if (!Number.isFinite(amount)) {
     amount = 0;
   }
 
@@ -44,7 +46,7 @@ export function formatCurrency(
 export function formatFullNumber(
   amount: number,
   currencyCode: CurrencyCode = 'INR',
-  formatPreference: 'lakhs' | 'international' = 'lakhs'
+  formatPreference: NumberFormat = 'lakhs'
 ): string {
   if (isNaN(amount)) amount = 0;
   const config = CURRENCY_CONFIGS[currencyCode] || CURRENCY_CONFIGS.INR;

@@ -1,5 +1,7 @@
 import { AppState } from '../types/index';
 import { AIConfig, AIProviderType } from '../types/ai';
+import { CurrencyCode, CURRENCY_CODES } from '../types/currency';
+import { EVENT_TYPES } from '../types/event';
 import { createSampleWedding } from './sampleEvents';
 import { createId } from './createId';
 import { stripControlChars } from './aiValidation';
@@ -138,6 +140,20 @@ function normalizeAIConfig(value: unknown): AIConfig {
   };
 }
 
+/**
+ * Normalizes an untrusted currency string to a supported code, falling back to
+ * INR. Validates the full code against the canonical list (the previous
+ * implementation accepted any 3-character string it could slice).
+ */
+function normalizeCurrencyCode(value: unknown): CurrencyCode {
+  if (typeof value === 'string') {
+    const code = value.trim().toUpperCase();
+    const match = CURRENCY_CODES.find((c) => c === code);
+    if (match) return match;
+  }
+  return 'INR';
+}
+
 function blankDefaults(): Partial<AppState> {
   return {
     expenses: [],
@@ -198,6 +214,10 @@ export function coerceAppState(value: unknown): AppState | null {
   if (!title || !eventTypeValue) {
     return null;
   }
+  // Unknown event types normalize to 'custom' (a first-class type with a valid idea set and
+  // template) instead of letting a forged string pass through the type system.
+  const eventType: AppState['event']['type'] =
+    EVENT_TYPES.find((v) => v === eventTypeValue) ?? 'custom';
 
   const guestsBlock =
     typeof event.guests === 'object' && event.guests !== null
@@ -243,7 +263,7 @@ export function coerceAppState(value: unknown): AppState | null {
     event: {
       ...((event as unknown) as AppState['event']),
       title: title.slice(0, 120),
-      type: eventTypeValue as AppState['event']['type'],
+      type: eventType,
       startDate,
       endDate:
         typeof event.endDate === 'string' && event.endDate.trim()
@@ -261,10 +281,7 @@ export function coerceAppState(value: unknown): AppState | null {
       },
       budget: {
         total: clamp(asFiniteNumber(budgetBlock.total, 0), 0, MAX_MONEY),
-        currency:
-          typeof budgetBlock.currency === 'string' && budgetBlock.currency
-            ? (budgetBlock.currency.slice(0, 3).toUpperCase() as AppState['event']['budget']['currency'])
-            : 'INR',
+        currency: normalizeCurrencyCode(budgetBlock.currency),
         numberFormat: budgetBlock.numberFormat === 'international' ? 'international' : 'lakhs',
       },
       priorities: Array.isArray(event.priorities)
