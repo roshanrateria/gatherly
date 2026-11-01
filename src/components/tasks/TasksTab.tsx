@@ -4,18 +4,16 @@ import {
   Plus,
   Sparkles,
   Search,
-  Filter,
   CheckCircle2,
   Circle,
   Clock,
-  AlertCircle,
   User,
   Trash2,
   Edit2,
-  X,
-  ListTodo,
 } from 'lucide-react';
 import { AppState, Task, TaskPriority, TaskStatus } from '../../types/index';
+import { createId } from '../../lib/createId';
+import { ModalShell } from '../ui/ModalShell';
 
 interface TasksTabProps {
   state: AppState;
@@ -96,7 +94,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ state, onUpdateState, onShow
       onShowToast('success', 'Task Updated', tTitle);
     } else {
       const newTask: Task = {
-        id: `t_${Date.now()}`,
+        id: createId('t'),
         title: tTitle,
         category: tCategory,
         priority: tPriority,
@@ -145,7 +143,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({ state, onUpdateState, onShow
 
   const addGapTask = (gap: { title: string; category: string; priority: TaskPriority; assignee: string }) => {
     const newTask: Task = {
-      id: `t_gap_${Date.now()}`,
+      id: createId('t_gap'),
       title: gap.title,
       category: gap.category,
       priority: gap.priority,
@@ -204,8 +202,10 @@ export const TasksTab: React.FC<TasksTabProps> = ({ state, onUpdateState, onShow
       {/* Filter and Search Controls */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="relative flex-1 min-w-[220px]">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
+          <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-3" aria-hidden="true" />
+          <label htmlFor="task-search" className="sr-only">Search tasks by title or assignee</label>
           <input
+            id="task-search"
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -216,10 +216,12 @@ export const TasksTab: React.FC<TasksTabProps> = ({ state, onUpdateState, onShow
 
         <div className="flex flex-wrap items-center gap-2">
           {/* Status filter */}
+          <label htmlFor="task-status-filter" className="sr-only">Filter by status</label>
           <select
+            id="task-status-filter"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-2.5 py-2 border border-slate-200 rounded-lg bg-white text-slate-700 outline-hidden font-medium"
+            className="px-2.5 py-2 border border-slate-200 rounded-lg bg-white text-slate-800 outline-hidden font-medium"
           >
             <option value="all">All Statuses</option>
             <option value="todo">To Do</option>
@@ -229,10 +231,12 @@ export const TasksTab: React.FC<TasksTabProps> = ({ state, onUpdateState, onShow
           </select>
 
           {/* Priority filter */}
+          <label htmlFor="task-priority-filter" className="sr-only">Filter by priority</label>
           <select
+            id="task-priority-filter"
             value={priorityFilter}
             onChange={(e) => setPriorityFilter(e.target.value)}
-            className="px-2.5 py-2 border border-slate-200 rounded-lg bg-white text-slate-700 outline-hidden font-medium"
+            className="px-2.5 py-2 border border-slate-200 rounded-lg bg-white text-slate-800 outline-hidden font-medium"
           >
             <option value="all">All Priorities</option>
             <option value="high">High Priority</option>
@@ -242,18 +246,22 @@ export const TasksTab: React.FC<TasksTabProps> = ({ state, onUpdateState, onShow
 
           {/* Category filter */}
           {categoriesList.length > 0 && (
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="px-2.5 py-2 border border-slate-200 rounded-lg bg-white text-slate-700 outline-hidden font-medium"
-            >
+            <>
+              <label htmlFor="task-category-filter" className="sr-only">Filter by category</label>
+              <select
+                id="task-category-filter"
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="px-2.5 py-2 border border-slate-200 rounded-lg bg-white text-slate-800 outline-hidden font-medium"
+              >
               <option value="all">All Categories</option>
               {categoriesList.map((cat) => (
                 <option key={cat} value={cat}>
                   {cat}
                 </option>
               ))}
-            </select>
+              </select>
+            </>
           )}
         </div>
       </div>
@@ -262,9 +270,9 @@ export const TasksTab: React.FC<TasksTabProps> = ({ state, onUpdateState, onShow
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         {filteredTasks.length === 0 ? (
           <div className="text-center py-12">
-            <CheckSquare className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-            <h4 className="text-sm font-semibold text-slate-700">No tasks found</h4>
-            <p className="text-xs text-slate-400 mt-1">
+            <CheckSquare className="w-10 h-10 text-slate-300 mx-auto mb-2" aria-hidden="true" />
+            <h4 className="text-sm font-semibold text-slate-800">No tasks found</h4>
+            <p className="text-xs text-slate-600 mt-1">
               {searchQuery || statusFilter !== 'all'
                 ? 'Try adjusting your search or filters.'
                 : 'Click "Add Task" or "Scan for AI-Suggested Gaps" to populate.'}
@@ -284,12 +292,14 @@ export const TasksTab: React.FC<TasksTabProps> = ({ state, onUpdateState, onShow
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => toggleTaskStatus(t.id)}
-                      className="text-slate-400 hover:text-emerald-600 transition-colors cursor-pointer"
+                      className="text-slate-500 hover:text-emerald-600 transition-colors cursor-pointer"
+                      aria-pressed={isDone}
+                      aria-label={`${isDone ? 'Mark as to do' : 'Mark as completed'}: ${t.title}`}
                     >
                       {isDone ? (
-                        <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600" aria-hidden="true" />
                       ) : (
-                        <Circle className="w-5 h-5 text-slate-300 hover:text-purple-700" />
+                        <Circle className="w-5 h-5 text-slate-400 hover:text-purple-700" aria-hidden="true" />
                       )}
                     </button>
 
@@ -368,15 +378,17 @@ export const TasksTab: React.FC<TasksTabProps> = ({ state, onUpdateState, onShow
                           setTNotes(t.notes || '');
                           setTaskModalOpen(true);
                         }}
-                        className="p-1 text-slate-400 hover:text-slate-700 rounded"
+                        className="p-1 text-slate-500 hover:text-slate-800 rounded cursor-pointer"
+                        aria-label={`Edit task ${t.title}`}
                       >
-                        <Edit2 className="w-3.5 h-3.5" />
+                        <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
                       <button
                         onClick={() => handleDeleteTask(t.id)}
-                        className="p-1 text-slate-400 hover:text-rose-600 rounded"
+                        className="p-1 text-slate-500 hover:text-rose-600 rounded cursor-pointer"
+                        aria-label={`Delete task ${t.title}`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
                     </div>
                   </div>
@@ -388,171 +400,162 @@ export const TasksTab: React.FC<TasksTabProps> = ({ state, onUpdateState, onShow
       </div>
 
       {/* AI Task Gaps Modal */}
-      {suggestedGapsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-xl w-full p-6 space-y-4 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-purple-900" />
-                <h3 className="text-base font-bold text-slate-900 font-editorial">
-                  AI-Identified Operational Gaps
-                </h3>
+      <ModalShell
+        isOpen={suggestedGapsModalOpen}
+        onClose={() => setSuggestedGapsModalOpen(false)}
+        title="AI-Identified Operational Gaps"
+        maxWidthClassName="max-w-xl"
+        bodyClassName="p-6 space-y-4"
+      >
+        <p className="text-xs text-slate-700">
+          Gatherly analyzed your {event.type.replace('_', ' ')} requirements and detected essential
+          checklist items frequently overlooked in standard plans:
+        </p>
+
+        <div className="space-y-2.5 max-h-[50vh] overflow-y-auto">
+          {generateTaskGaps().map((gap, idx) => (
+            <div
+              key={idx}
+              className="p-3.5 rounded-xl border border-purple-200 bg-purple-50/50 flex items-center justify-between gap-3 text-xs"
+            >
+              <div className="space-y-0.5">
+                <span className="font-bold text-slate-900 block">{gap.title}</span>
+                <span className="text-[11px] text-slate-600">
+                  Category: {gap.category} • Lead: {gap.assignee}
+                </span>
               </div>
+
               <button
-                onClick={() => setSuggestedGapsModalOpen(false)}
-                className="text-slate-400 hover:text-slate-700 text-xs font-semibold"
+                onClick={() => addGapTask(gap)}
+                className="shrink-0 flex items-center gap-1 px-3 py-1 bg-purple-900 hover:bg-purple-950 text-white rounded-lg font-bold shadow-xs transition-colors cursor-pointer"
               >
-                Close
+                <Plus className="w-3.5 h-3.5 text-amber-300" aria-hidden="true" />
+                <span>Add to Tasks</span>
               </button>
             </div>
-
-            <p className="text-xs text-slate-600">
-              Gatherly analyzed your {event.type.replace('_', ' ')} requirements and detected essential
-              checklist items frequently overlooked in standard plans:
-            </p>
-
-            <div className="space-y-2.5 max-h-[50vh] overflow-y-auto">
-              {generateTaskGaps().map((gap, idx) => (
-                <div
-                  key={idx}
-                  className="p-3.5 rounded-xl border border-purple-200 bg-purple-50/50 flex items-center justify-between gap-3 text-xs"
-                >
-                  <div className="space-y-0.5">
-                    <span className="font-bold text-slate-900 block">{gap.title}</span>
-                    <span className="text-[11px] text-slate-500">
-                      Category: {gap.category} • Lead: {gap.assignee}
-                    </span>
-                  </div>
-
-                  <button
-                    onClick={() => addGapTask(gap)}
-                    className="shrink-0 flex items-center gap-1 px-3 py-1 bg-purple-900 hover:bg-purple-950 text-white rounded-lg font-bold shadow-xs transition-colors cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-amber-300" />
-                    <span>Add to Tasks</span>
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
+          ))}
         </div>
-      )}
+      </ModalShell>
 
       {/* Task Add / Edit Modal */}
-      {taskModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <form
-            onSubmit={handleSaveTask}
-            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95"
-          >
-            <h3 className="text-base font-bold text-slate-900 font-editorial">
-              {editingTask ? 'Edit Task' : 'Add New Checklist Task'}
-            </h3>
+      <ModalShell
+        isOpen={taskModalOpen}
+        onClose={() => setTaskModalOpen(false)}
+        title={editingTask ? 'Edit Task' : 'Add New Checklist Task'}
+        maxWidthClassName="max-w-md"
+        bodyClassName="p-6"
+      >
+        <form onSubmit={handleSaveTask} className="space-y-4">
+          <div>
+            <label htmlFor="task-title" className="block text-xs font-medium text-slate-800 mb-1">Task Title</label>
+            <input
+              id="task-title"
+              type="text"
+              required
+              value={tTitle}
+              onChange={(e) => setTTitle(e.target.value)}
+              placeholder="e.g. Schedule DJ sound check"
+              className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+            />
+          </div>
 
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Task Title</label>
+              <label htmlFor="task-category" className="block text-xs font-medium text-slate-800 mb-1">Category</label>
               <input
+                id="task-category"
                 type="text"
-                required
-                value={tTitle}
-                onChange={(e) => setTTitle(e.target.value)}
-                placeholder="e.g. Schedule DJ sound check"
+                value={tCategory}
+                onChange={(e) => setTCategory(e.target.value)}
+                placeholder="e.g. Catering, Venue, AV"
                 className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Category</label>
-                <input
-                  type="text"
-                  value={tCategory}
-                  onChange={(e) => setTCategory(e.target.value)}
-                  placeholder="e.g. Catering, Venue, AV"
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Priority</label>
-                <select
-                  value={tPriority}
-                  onChange={(e) => setTPriority(e.target.value as TaskPriority)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
-                >
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
-                </select>
-              </div>
+            <div>
+              <label htmlFor="task-priority" className="block text-xs font-medium text-slate-800 mb-1">Priority</label>
+              <select
+                id="task-priority"
+                value={tPriority}
+                onChange={(e) => setTPriority(e.target.value as TaskPriority)}
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
+              >
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
             </div>
+          </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Status</label>
-                <select
-                  value={tStatus}
-                  onChange={(e) => setTStatus(e.target.value as TaskStatus)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
-                >
-                  <option value="todo">To Do</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="blocked">Blocked</option>
-                  <option value="done">Completed</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Assignee</label>
-                <input
-                  type="text"
-                  value={tAssignee}
-                  onChange={(e) => setTAssignee(e.target.value)}
-                  placeholder="e.g. Lead Planner"
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-                />
-              </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="task-status" className="block text-xs font-medium text-slate-800 mb-1">Status</label>
+              <select
+                id="task-status"
+                value={tStatus}
+                onChange={(e) => setTStatus(e.target.value as TaskStatus)}
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
+              >
+                <option value="todo">To Do</option>
+                <option value="in_progress">In Progress</option>
+                <option value="blocked">Blocked</option>
+                <option value="done">Completed</option>
+              </select>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Due Date</label>
+              <label htmlFor="task-assignee" className="block text-xs font-medium text-slate-800 mb-1">Assignee</label>
               <input
-                type="date"
-                value={tDueDate}
-                onChange={(e) => setTDueDate(e.target.value)}
+                id="task-assignee"
+                type="text"
+                value={tAssignee}
+                onChange={(e) => setTAssignee(e.target.value)}
+                placeholder="e.g. Lead Planner"
                 className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
               />
             </div>
+          </div>
 
-            <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Notes</label>
-              <textarea
-                rows={2}
-                value={tNotes}
-                onChange={(e) => setTNotes(e.target.value)}
-                placeholder="Specific instructions or vendor contacts..."
-                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-              />
-            </div>
+          <div>
+            <label htmlFor="task-due" className="block text-xs font-medium text-slate-800 mb-1">Due Date</label>
+            <input
+              id="task-due"
+              type="date"
+              value={tDueDate}
+              onChange={(e) => setTDueDate(e.target.value)}
+              className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+            />
+          </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => setTaskModalOpen(false)}
-                className="text-xs px-3 py-1.5 text-slate-600 hover:text-slate-900"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-purple-900 text-white rounded-lg text-xs font-bold hover:bg-purple-950 transition-colors"
-              >
-                Save Task
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+          <div>
+            <label htmlFor="task-notes" className="block text-xs font-medium text-slate-800 mb-1">Notes</label>
+            <textarea
+              id="task-notes"
+              rows={2}
+              value={tNotes}
+              onChange={(e) => setTNotes(e.target.value)}
+              placeholder="Specific instructions or vendor contacts..."
+              className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={() => setTaskModalOpen(false)}
+              className="text-xs px-3 py-1.5 text-slate-600 hover:text-slate-900 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-purple-900 text-white rounded-lg text-xs font-bold hover:bg-purple-950 transition-colors cursor-pointer"
+            >
+              Save Task
+            </button>
+          </div>
+        </form>
+      </ModalShell>
     </div>
   );
 };

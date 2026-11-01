@@ -37,3 +37,8 @@ desktop.ini
 # Demo recorder output (scripts/record-demo.mjs default OUT_DIR)
 recordings/
 gatherly-demo-raw.webm
+
+# Test artifacts
+test-results/
+playwright-report/
+.vite/

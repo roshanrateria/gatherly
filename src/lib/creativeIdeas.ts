@@ -1,4 +1,4 @@
-import { Idea, IdeaCategory } from '../types/idea';
+import { Idea } from '../types/idea';
 import { EventType } from '../types/event';
 
 export function getDefaultIdeasForEvent(eventType: EventType): Idea[] {
@@ -12,7 +12,7 @@ export function getDefaultIdeasForEvent(eventType: EventType): Idea[] {
         fitExplanation: 'Creates an opulent, timeless atmosphere suited for grand palace or banquet lawn settings.',
         estimatedCostTier: 'high',
         requirements: ['Warm ambient lighting fixtures', 'Brass urlis with floating candles', 'Marigold and jasmine arches'],
-        status: 'saved',
+        status: 'suggested',
         tags: ['Royal', 'Heritage', 'Floral'],
       },
       {
@@ -23,7 +23,7 @@ export function getDefaultIdeasForEvent(eventType: EventType): Idea[] {
         fitExplanation: 'Massive hit with both young attendees and traditional elders; ensures vibrant engagement during high tea.',
         estimatedCostTier: 'medium',
         requirements: ['Skilled live counter chefs', 'Eco-friendly terracotta earthen kulhads', 'Hygienic RO water setup'],
-        status: 'saved',
+        status: 'suggested',
         tags: ['Hospitality', 'Live Counters', 'Chaat'],
       },
       {
@@ -70,7 +70,7 @@ export function getDefaultIdeasForEvent(eventType: EventType): Idea[] {
         fitExplanation: 'Aligns with corporate ESG commitments and showcases innovative engineering culture.',
         estimatedCostTier: 'medium',
         requirements: ['Digital badge scanners', 'Potted plants instead of cut flowers', 'Recycled kraft delegate kits'],
-        status: 'saved',
+        status: 'suggested',
         tags: ['Corporate', 'Sustainability', 'Tech'],
       },
       {
@@ -81,7 +81,7 @@ export function getDefaultIdeasForEvent(eventType: EventType): Idea[] {
         fitExplanation: 'Drives 85%+ engagement and avoids awkward silence during question periods.',
         estimatedCostTier: 'low',
         requirements: ['Audience response software integration', 'Dedicated moderator tablet', 'Stable auditorium WiFi'],
-        status: 'saved',
+        status: 'suggested',
         tags: ['Engagement', 'Audience', 'Interactive'],
       },
       {
@@ -106,7 +106,7 @@ export function getDefaultIdeasForEvent(eventType: EventType): Idea[] {
         fitExplanation: 'Sophisticated aesthetic for milestone adult celebrations that balances intimacy and high celebration.',
         estimatedCostTier: 'medium',
         requirements: ['Custom neon signage', 'Lounge furniture rental', 'Mood dimmer lighting'],
-        status: 'saved',
+        status: 'suggested',
         tags: ['Neon', 'Chic', 'Milestone'],
       },
       {
@@ -117,7 +117,7 @@ export function getDefaultIdeasForEvent(eventType: EventType): Idea[] {
         fitExplanation: 'Far more personal and nostalgic than a written guestbook; creates a hilarious audio keepsake.',
         estimatedCostTier: 'low',
         requirements: ['Audio guestbook rental unit', 'Signage explaining how to dial & speak', 'Quiet foyer alcove'],
-        status: 'saved',
+        status: 'suggested',
         tags: ['Keepsake', 'Audio', 'Interactive'],
       },
       {

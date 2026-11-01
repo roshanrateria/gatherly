@@ -1,25 +1,22 @@
 import React, { useState } from 'react';
 import {
-  Building2,
   Plus,
   Star,
   Search,
-  CheckCircle2,
-  Clock,
   Phone,
   Mail,
   MapPin,
   FileText,
-  DollarSign,
   Scale,
+  Globe,
   Edit2,
   Trash2,
   Check,
-  HelpCircle,
-  Sparkles,
 } from 'lucide-react';
 import { AppState, Vendor, VendorCategory, BookingStatus } from '../../types/index';
 import { formatCurrency } from '../../lib/currency';
+import { createId } from '../../lib/createId';
+import { ModalShell } from '../ui/ModalShell';
 
 interface VendorsTabProps {
   state: AppState;
@@ -53,6 +50,7 @@ export const VendorsTab: React.FC<VendorsTabProps> = ({ state, onUpdateState, on
   const [vContact, setVContact] = useState('');
   const [vPhone, setVPhone] = useState('');
   const [vEmail, setVEmail] = useState('');
+  const [vWebsite, setVWebsite] = useState('');
   const [vLocation, setVLocation] = useState('');
   const [vQuoted, setVQuoted] = useState<number>(0);
   const [vAgreed, setVAgreed] = useState<number>(0);
@@ -75,9 +73,33 @@ export const VendorsTab: React.FC<VendorsTabProps> = ({ state, onUpdateState, on
     return true;
   });
 
+  /**
+   * Normalizes a vendor website input to a safe http(s) URL. Only http/https
+   * schemes are accepted so a pasted `javascript:` URL can never be stored and
+   * later rendered as a clickable link.
+   */
+  const normalizeWebsiteUrl = (raw: string): string | null => {
+    const trimmed = raw.trim();
+    if (!trimmed) return '';
+    const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    try {
+      const url = new URL(candidate);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+      return url.toString();
+    } catch {
+      return null;
+    }
+  };
+
   const handleSaveVendor = (e: React.FormEvent) => {
     e.preventDefault();
     if (!vName.trim()) return;
+
+    const normalizedWebsite = normalizeWebsiteUrl(vWebsite);
+    if (normalizedWebsite === null) {
+      onShowToast('error', 'Invalid Website URL', 'Enter a valid URL such as https://example.com.');
+      return;
+    }
 
     const deliverablesList = vDeliverables
       .split('\n')
@@ -94,6 +116,7 @@ export const VendorsTab: React.FC<VendorsTabProps> = ({ state, onUpdateState, on
               contactPerson: vContact,
               phone: vPhone,
               email: vEmail,
+              website: normalizedWebsite || undefined,
               location: vLocation,
               quotedAmount: vQuoted,
               agreedCost: vAgreed,
@@ -109,12 +132,13 @@ export const VendorsTab: React.FC<VendorsTabProps> = ({ state, onUpdateState, on
       onShowToast('success', 'Vendor Updated', vName);
     } else {
       const newVendor: Vendor = {
-        id: `v_${Date.now()}`,
+        id: createId('v'),
         name: vName,
         category: vCategory,
         contactPerson: vContact,
         phone: vPhone,
         email: vEmail,
+        website: normalizedWebsite || undefined,
         location: vLocation,
         quotedAmount: vQuoted,
         agreedCost: vAgreed,
@@ -226,6 +250,7 @@ export const VendorsTab: React.FC<VendorsTabProps> = ({ state, onUpdateState, on
               setVContact('');
               setVPhone('');
               setVEmail('');
+              setVWebsite('');
               setVLocation('');
               setVQuoted(0);
               setVAgreed(0);
@@ -247,8 +272,10 @@ export const VendorsTab: React.FC<VendorsTabProps> = ({ state, onUpdateState, on
       {/* Filter Bar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
+          <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-3" aria-hidden="true" />
+          <label htmlFor="vendor-search" className="sr-only">Search vendors by name or service</label>
           <input
+            id="vendor-search"
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -258,10 +285,12 @@ export const VendorsTab: React.FC<VendorsTabProps> = ({ state, onUpdateState, on
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="vendor-category-filter" className="sr-only">Filter by category</label>
           <select
+            id="vendor-category-filter"
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-2.5 py-2 border border-slate-200 rounded-lg bg-white text-slate-700 font-medium"
+            className="px-2.5 py-2 border border-slate-200 rounded-lg bg-white text-slate-800 font-medium"
           >
             <option value="all">All Categories</option>
             <option value="venue">Venue</option>
@@ -273,10 +302,12 @@ export const VendorsTab: React.FC<VendorsTabProps> = ({ state, onUpdateState, on
             <option value="security">Security &amp; Safety</option>
           </select>
 
+          <label htmlFor="vendor-status-filter" className="sr-only">Filter by booking status</label>
           <select
+            id="vendor-status-filter"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-2.5 py-2 border border-slate-200 rounded-lg bg-white text-slate-700 font-medium"
+            className="px-2.5 py-2 border border-slate-200 rounded-lg bg-white text-slate-800 font-medium"
           >
             <option value="all">All Booking Statuses</option>
             <option value="researching">Researching</option>
@@ -314,10 +345,13 @@ export const VendorsTab: React.FC<VendorsTabProps> = ({ state, onUpdateState, on
                     <h3 className="text-base font-bold text-slate-900">{v.name}</h3>
                     <button
                       onClick={() => toggleShortlist(v.id)}
-                      className="text-amber-400 hover:text-amber-500"
+                      className="text-amber-400 hover:text-amber-500 cursor-pointer"
+                      aria-pressed={v.isShortlisted}
+                      aria-label={`${v.isShortlisted ? 'Remove from shortlist' : 'Add to shortlist'}: ${v.name}`}
                     >
                       <Star
                         className={`w-4 h-4 ${v.isShortlisted ? 'fill-amber-400' : 'text-slate-300'}`}
+                        aria-hidden="true"
                       />
                     </button>
                   </div>
@@ -348,8 +382,10 @@ export const VendorsTab: React.FC<VendorsTabProps> = ({ state, onUpdateState, on
                       className={`w-3.5 h-3.5 ${
                         i < v.rating ? 'fill-amber-400 text-amber-400' : 'text-slate-200'
                       }`}
+                      aria-hidden="true"
                     />
                   ))}
+                  <span className="sr-only">{`${v.rating} out of 5 rating`}</span>
                 </div>
               </div>
 
@@ -390,13 +426,26 @@ export const VendorsTab: React.FC<VendorsTabProps> = ({ state, onUpdateState, on
                 )}
                 {v.email && (
                   <div className="flex items-center gap-2">
-                    <Mail className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{v.email}</span>
+                    <Mail className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
+                    <a href={`mailto:${v.email}`} className="hover:text-purple-900">{v.email}</a>
+                  </div>
+                )}
+                {v.website && /^https?:\/\//i.test(v.website) && (
+                  <div className="flex items-center gap-2">
+                    <Globe className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
+                    <a
+                      href={v.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:text-purple-900 truncate max-w-[220px]"
+                    >
+                      {v.website.replace(/^https?:\/\//i, '')}
+                    </a>
                   </div>
                 )}
                 {v.location && (
                   <div className="flex items-center gap-2">
-                    <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                    <MapPin className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
                     <span className="line-clamp-1">{v.location}</span>
                   </div>
                 )}
@@ -442,6 +491,7 @@ export const VendorsTab: React.FC<VendorsTabProps> = ({ state, onUpdateState, on
                       setVContact(v.contactPerson || '');
                       setVPhone(v.phone || '');
                       setVEmail(v.email || '');
+                      setVWebsite(v.website || '');
                       setVLocation(v.location || '');
                       setVQuoted(v.quotedAmount);
                       setVAgreed(v.agreedCost);
@@ -452,15 +502,17 @@ export const VendorsTab: React.FC<VendorsTabProps> = ({ state, onUpdateState, on
                       setVNotes(v.notes || '');
                       setVendorModalOpen(true);
                     }}
-                    className="p-1.5 text-slate-400 hover:text-slate-700 rounded transition-colors"
+                    className="p-1.5 text-slate-500 hover:text-slate-800 rounded transition-colors cursor-pointer"
+                    aria-label={`Edit vendor ${v.name}`}
                   >
-                    <Edit2 className="w-3.5 h-3.5" />
+                    <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
                   <button
                     onClick={() => handleDeleteVendor(v.id)}
-                    className="p-1.5 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                    className="p-1.5 text-slate-500 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                    aria-label={`Delete vendor ${v.name}`}
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
                 </div>
               </div>
@@ -470,25 +522,14 @@ export const VendorsTab: React.FC<VendorsTabProps> = ({ state, onUpdateState, on
       </div>
 
       {/* Side-by-Side Comparison Modal */}
-      {compareModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full p-6 space-y-4 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <div className="flex items-center gap-2">
-                <Scale className="w-5 h-5 text-purple-900" />
-                <h3 className="text-base font-bold text-slate-900 font-editorial">
-                  Side-by-Side Vendor Evaluation
-                </h3>
-              </div>
-              <button
-                onClick={() => setCompareModalOpen(false)}
-                className="text-slate-400 hover:text-slate-700 text-xs font-semibold"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <ModalShell
+        isOpen={compareModalOpen}
+        onClose={() => setCompareModalOpen(false)}
+        title="Side-by-Side Vendor Evaluation"
+        maxWidthClassName="max-w-4xl"
+        bodyClassName="p-6 space-y-4"
+      >
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {selectedVendorIdsForCompare.map((vid) => {
                 const vend = vendors.find((v) => v.id === vid);
                 if (!vend) return null;
@@ -552,246 +593,301 @@ export const VendorsTab: React.FC<VendorsTabProps> = ({ state, onUpdateState, on
                   </div>
                 );
               })}
-            </div>
-          </div>
         </div>
-      )}
+      </ModalShell>
 
       {/* Hiring Checklists Drawer */}
-      {checklistDrawerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-xl w-full p-6 space-y-4 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
-              <div className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-purple-900" />
-                <h3 className="text-base font-bold text-slate-900 font-editorial">
-                  Vendor Selection Checklists &amp; Questions to Ask
-                </h3>
-              </div>
-              <button
-                onClick={() => setChecklistDrawerOpen(false)}
-                className="text-slate-400 hover:text-slate-700 text-xs font-semibold"
-              >
-                Close
-              </button>
-            </div>
-
-            {/* Category Switcher */}
-            <div className="flex gap-2">
-              {(['venue', 'catering', 'photography', 'decor'] as const).map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setChecklistCategory(cat)}
-                  className={`px-3 py-1 text-xs font-semibold rounded-lg capitalize transition-colors ${
-                    checklistCategory === cat
-                      ? 'bg-purple-900 text-white'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
-
-            {/* Checklist Items */}
-            <div className="space-y-2 pt-2">
-              {(hiringChecklists[checklistCategory] || []).map((q, idx) => (
-                <div
-                  key={idx}
-                  className="p-3 rounded-xl bg-purple-50/50 border border-purple-100 text-xs text-slate-800 flex items-start gap-2.5"
-                >
-                  <Check className="w-4 h-4 text-purple-900 shrink-0 mt-0.5" />
-                  <span>{q}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+      <ModalShell
+        isOpen={checklistDrawerOpen}
+        onClose={() => setChecklistDrawerOpen(false)}
+        title="Vendor Selection Checklists & Questions to Ask"
+        maxWidthClassName="max-w-xl"
+        bodyClassName="p-6 space-y-4"
+      >
+        {/* Category Switcher */}
+        <div className="flex gap-2" role="group" aria-label="Checklist category">
+          {(['venue', 'catering', 'photography', 'decor'] as const).map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setChecklistCategory(cat)}
+              aria-pressed={checklistCategory === cat}
+              className={`px-3 py-1 text-xs font-semibold rounded-lg capitalize transition-colors cursor-pointer ${
+                checklistCategory === cat
+                  ? 'bg-purple-900 text-white'
+                  : 'bg-slate-100 text-slate-800 hover:bg-slate-200'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
         </div>
-      )}
+
+        {/* Checklist Items */}
+        <div className="space-y-2 pt-2">
+          {(hiringChecklists[checklistCategory] || []).map((q, idx) => (
+            <div
+              key={idx}
+              className="p-3 rounded-xl bg-purple-50/50 border border-purple-100 text-xs text-slate-800 flex items-start gap-2.5"
+            >
+              <Check className="w-4 h-4 text-purple-900 shrink-0 mt-0.5" aria-hidden="true" />
+              <span>{q}</span>
+            </div>
+          ))}
+        </div>
+      </ModalShell>
 
       {/* Vendor Add / Edit Modal */}
-      {vendorModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <form
-            onSubmit={handleSaveVendor}
-            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto animate-in fade-in zoom-in-95"
-          >
-            <h3 className="text-base font-bold text-slate-900 font-editorial">
-              {editingVendor ? 'Edit Vendor Record' : 'Add New Vendor'}
-            </h3>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Vendor / Business Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={vName}
-                  onChange={(e) => setVName(e.target.value)}
-                  placeholder="e.g. Royal Gourmet Caterers"
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Category</label>
-                <select
-                  value={vCategory}
-                  onChange={(e) => setVCategory(e.target.value as VendorCategory)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
-                >
-                  <option value="venue">Venue</option>
-                  <option value="catering">Catering &amp; Food</option>
-                  <option value="decor">Decor &amp; Floral</option>
-                  <option value="photography">Photography &amp; Video</option>
-                  <option value="entertainment">Entertainment &amp; DJ</option>
-                  <option value="transport">Transport</option>
-                  <option value="security">Security</option>
-                  <option value="other">Other Service</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Quoted ({currency})
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={vQuoted}
-                  onChange={(e) => setVQuoted(parseFloat(e.target.value) || 0)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Agreed Cost ({currency})
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={vAgreed}
-                  onChange={(e) => setVAgreed(parseFloat(e.target.value) || 0)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Deposit Paid ({currency})
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  value={vDeposit}
-                  onChange={(e) => setVDeposit(parseFloat(e.target.value) || 0)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Booking Status
-                </label>
-                <select
-                  value={vStatus}
-                  onChange={(e) => setVStatus(e.target.value as BookingStatus)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
-                >
-                  <option value="researching">Researching</option>
-                  <option value="contacted">Contacted</option>
-                  <option value="shortlisted">Shortlisted</option>
-                  <option value="quote_received">Quote Received</option>
-                  <option value="contract_signed">Contract Signed</option>
-                  <option value="deposit_paid">Deposit Paid</option>
-                  <option value="fully_paid">Fully Paid</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Rating (1 to 5)
-                </label>
-                <select
-                  value={vRating}
-                  onChange={(e) => setVRating(parseInt(e.target.value) || 5)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
-                >
-                  <option value="5">★★★★★ (5 Stars - Exceptional)</option>
-                  <option value="4">★★★★☆ (4 Stars - Recommended)</option>
-                  <option value="3">★★★☆☆ (3 Stars - Average)</option>
-                  <option value="2">★★☆☆☆ (2 Stars - Inconsistent)</option>
-                  <option value="1">★☆☆☆☆ (1 Star - Caution)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Contact Person
-                </label>
-                <input
-                  type="text"
-                  value={vContact}
-                  onChange={(e) => setVContact(e.target.value)}
-                  placeholder="Manager / Owner"
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Phone Number
-                </label>
-                <input
-                  type="text"
-                  value={vPhone}
-                  onChange={(e) => setVPhone(e.target.value)}
-                  placeholder="+91 98..."
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-                />
-              </div>
-            </div>
-
+      <ModalShell
+        isOpen={vendorModalOpen}
+        onClose={() => setVendorModalOpen(false)}
+        title={editingVendor ? 'Edit Vendor Record' : 'Add New Vendor'}
+        maxWidthClassName="max-w-lg"
+        bodyClassName="p-6 max-h-[85vh] overflow-y-auto"
+      >
+        <form onSubmit={handleSaveVendor} className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
-                Deliverables (One per line)
+              <label htmlFor="vendor-name" className="block text-xs font-medium text-slate-800 mb-1">
+                Vendor / Business Name
               </label>
-              <textarea
-                rows={2}
-                value={vDeliverables}
-                onChange={(e) => setVDeliverables(e.target.value)}
-                placeholder="Drone 4K aerials&#10;Teaser video within 48h&#10;High-res raw files"
+              <input
+                id="vendor-name"
+                type="text"
+                required
+                value={vName}
+                onChange={(e) => setVName(e.target.value)}
+                placeholder="e.g. Royal Gourmet Caterers"
                 className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
               />
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => setVendorModalOpen(false)}
-                className="text-xs px-3 py-1.5 text-slate-600 hover:text-slate-900"
+            <div>
+              <label htmlFor="vendor-category" className="block text-xs font-medium text-slate-800 mb-1">Category</label>
+              <select
+                id="vendor-category"
+                value={vCategory}
+                onChange={(e) => setVCategory(e.target.value as VendorCategory)}
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
               >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-purple-900 text-white rounded-lg text-xs font-bold hover:bg-purple-950 transition-colors cursor-pointer"
-              >
-                Save Vendor
-              </button>
+                <option value="venue">Venue</option>
+                <option value="catering">Catering &amp; Food</option>
+                <option value="decor">Decor &amp; Floral</option>
+                <option value="photography">Photography &amp; Video</option>
+                <option value="entertainment">Entertainment &amp; DJ</option>
+                <option value="transport">Transport</option>
+                <option value="security">Security</option>
+                <option value="other">Other Service</option>
+              </select>
             </div>
-          </form>
-        </div>
-      )}
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label htmlFor="vendor-quoted" className="block text-xs font-medium text-slate-800 mb-1">
+                Quoted ({currency})
+              </label>
+              <input
+                id="vendor-quoted"
+                type="number"
+                min="0"
+                value={vQuoted}
+                onChange={(e) => setVQuoted(parseFloat(e.target.value) || 0)}
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="vendor-agreed" className="block text-xs font-medium text-slate-800 mb-1">
+                Agreed Cost ({currency})
+              </label>
+              <input
+                id="vendor-agreed"
+                type="number"
+                min="0"
+                value={vAgreed}
+                onChange={(e) => setVAgreed(parseFloat(e.target.value) || 0)}
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="vendor-deposit" className="block text-xs font-medium text-slate-800 mb-1">
+                Deposit Paid ({currency})
+              </label>
+              <input
+                id="vendor-deposit"
+                type="number"
+                min="0"
+                value={vDeposit}
+                onChange={(e) => setVDeposit(parseFloat(e.target.value) || 0)}
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="vendor-status" className="block text-xs font-medium text-slate-800 mb-1">
+                Booking Status
+              </label>
+              <select
+                id="vendor-status"
+                value={vStatus}
+                onChange={(e) => setVStatus(e.target.value as BookingStatus)}
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
+              >
+                <option value="researching">Researching</option>
+                <option value="contacted">Contacted</option>
+                <option value="shortlisted">Shortlisted</option>
+                <option value="quote_received">Quote Received</option>
+                <option value="contract_signed">Contract Signed</option>
+                <option value="deposit_paid">Deposit Paid</option>
+                <option value="fully_paid">Fully Paid</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="vendor-rating" className="block text-xs font-medium text-slate-800 mb-1">
+                Rating (1 to 5)
+              </label>
+              <select
+                id="vendor-rating"
+                value={vRating}
+                onChange={(e) => setVRating(parseInt(e.target.value) || 5)}
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
+              >
+                <option value="5">★★★★★ (5 Stars - Exceptional)</option>
+                <option value="4">★★★★☆ (4 Stars - Recommended)</option>
+                <option value="3">★★★☆☆ (3 Stars - Average)</option>
+                <option value="2">★★☆☆☆ (2 Stars - Inconsistent)</option>
+                <option value="1">★☆☆☆☆ (1 Star - Caution)</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="vendor-contact" className="block text-xs font-medium text-slate-800 mb-1">
+                Contact Person
+              </label>
+              <input
+                id="vendor-contact"
+                type="text"
+                value={vContact}
+                onChange={(e) => setVContact(e.target.value)}
+                placeholder="Manager / Owner"
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="vendor-phone" className="block text-xs font-medium text-slate-800 mb-1">
+                Phone Number
+              </label>
+              <input
+                id="vendor-phone"
+                type="text"
+                value={vPhone}
+                onChange={(e) => setVPhone(e.target.value)}
+                placeholder="+91 98..."
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="vendor-email" className="block text-xs font-medium text-slate-800 mb-1">
+                Email
+              </label>
+              <input
+                id="vendor-email"
+                type="email"
+                value={vEmail}
+                onChange={(e) => setVEmail(e.target.value)}
+                placeholder="manager@vendor.com"
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="vendor-website" className="block text-xs font-medium text-slate-800 mb-1">
+                Website
+              </label>
+              <input
+                id="vendor-website"
+                /* text (not type="url"): native URL validation would block the
+                   bare-domain input that normalizeWebsiteUrl exists to accept,
+                   while letting dangerous `javascript:` URLs through unchanged.
+                   The safe scheme check lives in handleSaveVendor. */
+                type="text"
+                value={vWebsite}
+                onChange={(e) => setVWebsite(e.target.value)}
+                placeholder="https://vendor.com"
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="vendor-location" className="block text-xs font-medium text-slate-800 mb-1">
+              Location / Service Area
+            </label>
+            <input
+              id="vendor-location"
+              type="text"
+              value={vLocation}
+              onChange={(e) => setVLocation(e.target.value)}
+              placeholder="e.g. Jaipur, Rajasthan"
+              className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="vendor-deliverables" className="block text-xs font-medium text-slate-800 mb-1">
+              Deliverables (One per line)
+            </label>
+            <textarea
+              id="vendor-deliverables"
+              rows={2}
+              value={vDeliverables}
+              onChange={(e) => setVDeliverables(e.target.value)}
+              placeholder="Drone 4K aerials&#10;Teaser video within 48h&#10;High-res raw files"
+              className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="vendor-notes" className="block text-xs font-medium text-slate-800 mb-1">
+              Notes
+            </label>
+            <textarea
+              id="vendor-notes"
+              rows={2}
+              value={vNotes}
+              onChange={(e) => setVNotes(e.target.value)}
+              placeholder="Contract terms, payment milestones..."
+              className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={() => setVendorModalOpen(false)}
+              className="text-xs px-3 py-1.5 text-slate-600 hover:text-slate-900 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-purple-900 text-white rounded-lg text-xs font-bold hover:bg-purple-950 transition-colors cursor-pointer"
+            >
+              Save Vendor
+            </button>
+          </div>
+        </form>
+      </ModalShell>
     </div>
   );
 };

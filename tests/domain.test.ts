@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { calculateBudgetSummary, generateDefaultCategoriesForEvent, generateSavingsTradeOffs } from '../src/lib/deterministicBudget.ts';
+import { calculateBudgetSummary, generateSavingsTradeOffs } from '../src/lib/deterministicBudget.ts';
 import { generateMilestonesForEvent, recalculateTimelineForNewDate, checkMilestoneDependencies } from '../src/lib/deterministicTimeline.ts';
 import { detectScheduleConflicts } from '../src/lib/deterministicSchedule.ts';
 import { parseNaturalLanguageBrief } from '../src/lib/naturalLanguageParser.ts';
@@ -81,7 +81,7 @@ describe('1. Deterministic Budget Math & Overrun Tests', () => {
 
 describe('2. Deterministic Timeline & Rescheduling Tests', () => {
   it('generates scaled milestones based on date and duration', () => {
-    const { milestones, tasks } = generateMilestonesForEvent('wedding', '2026-11-20', 250, 3);
+    const { milestones, tasks } = generateMilestonesForEvent('wedding', '2026-11-20');
     assert.ok(milestones.length >= 5, 'Should generate comprehensive milestones');
     assert.ok(tasks.length >= 10, 'Should generate matching action tasks');
 
@@ -92,12 +92,13 @@ describe('2. Deterministic Timeline & Rescheduling Tests', () => {
   });
 
   it('recalculates deadlines dynamically when event date changes', () => {
-    const { milestones, tasks } = generateMilestonesForEvent('wedding', '2026-11-20', 200, 3);
+    const { milestones, tasks } = generateMilestonesForEvent('wedding', '2026-11-20');
     const oldFirstDue = milestones[0].dueDate;
 
     const { updatedMilestones, updatedTasks } = recalculateTimelineForNewDate(milestones, tasks, '2026-12-25');
     const newFirstDue = updatedMilestones[0].dueDate;
 
+    assert.strictEqual(updatedTasks.length, tasks.length, 'Task count is preserved across rescheduling');
     assert.notStrictEqual(oldFirstDue, newFirstDue, 'Due date must shift with event date');
     assert.ok(newFirstDue > oldFirstDue, 'New due date should be later when event is postponed');
   });

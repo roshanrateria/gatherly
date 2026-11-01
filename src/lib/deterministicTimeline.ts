@@ -17,9 +17,7 @@ export function formatDueDateFromOffset(eventDateStr: string, daysBeforeEvent: n
 
 export function generateMilestonesForEvent(
   eventType: EventType,
-  startDateStr: string,
-  guestCount: number,
-  durationDays: number
+  startDateStr: string
 ): { milestones: Milestone[]; tasks: Task[] } {
   const todayStr = new Date().toISOString().split('T')[0];
   const totalLeadDays = Math.max(14, calculateDaysBetween(todayStr, startDateStr));
@@ -277,7 +275,7 @@ export function generateMilestonesForEvent(
 
   let prevMilestoneId: string | null = null;
 
-  rawList.forEach((raw, idx) => {
+  rawList.forEach((raw) => {
     const scaledOffset = scale(raw.standardOffset);
     const dueDate = formatDueDateFromOffset(startDateStr, scaledOffset);
     const isAtRisk = dueDate < todayStr;

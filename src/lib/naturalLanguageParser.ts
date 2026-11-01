@@ -20,6 +20,12 @@ export interface ParsedEventBrief {
   extractedSummary: string;
 }
 
+/** Keeps any parsed money figure inside representable, sane bounds. */
+function clampBudget(value: number): number | undefined {
+  if (!Number.isFinite(value) || value <= 0) return undefined;
+  return Math.min(1_000_000_000_000, value);
+}
+
 export function parseNaturalLanguageBrief(text: string): ParsedEventBrief {
   const lower = text.toLowerCase();
 
@@ -61,12 +67,17 @@ export function parseNaturalLanguageBrief(text: string): ParsedEventBrief {
   for (const pattern of guestPatterns) {
     const match = text.match(pattern);
     if (match) {
-      if (match[2]) {
-        guestCount = Math.round((parseInt(match[1], 10) + parseInt(match[2], 10)) / 2);
-      } else {
-        guestCount = parseInt(match[1], 10);
+      const first = Number.parseInt(match[1], 10);
+      const second = match[2] ? Number.parseInt(match[2], 10) : undefined;
+      if (Number.isFinite(first)) {
+        const count = second !== undefined && Number.isFinite(second)
+          ? Math.round((first + second) / 2)
+          : first;
+        if (count >= 1) {
+          guestCount = Math.min(100000, count);
+          break;
+        }
       }
-      break;
     }
   }
 
@@ -91,16 +102,16 @@ export function parseNaturalLanguageBrief(text: string): ParsedEventBrief {
   const rawNumMatch = text.match(/(?:₹|\$|€|£|aed|rs\.?|budget\s*(?:is|of)?)\s*([\d,]+)/i);
 
   if (croreMatch) {
-    budgetAmount = parseFloat(croreMatch[1]) * 10000000;
+    budgetAmount = clampBudget(parseFloat(croreMatch[1]) * 10000000);
   } else if (lakhMatch) {
-    budgetAmount = parseFloat(lakhMatch[1]) * 100000;
+    budgetAmount = clampBudget(parseFloat(lakhMatch[1]) * 100000);
   } else if (kMatch) {
-    budgetAmount = parseFloat(kMatch[1]) * 1000;
+    budgetAmount = clampBudget(parseFloat(kMatch[1]) * 1000);
   } else if (rawNumMatch) {
     const clean = rawNumMatch[1].replace(/,/g, '');
     const num = parseFloat(clean);
     if (!isNaN(num) && num > 100) {
-      budgetAmount = num;
+      budgetAmount = clampBudget(num);
     }
   }
 
@@ -191,8 +202,13 @@ export function parseNaturalLanguageBrief(text: string): ParsedEventBrief {
   if (mMatch) {
     const monthKey = mMatch[1].toLowerCase();
     const monthNum = monthNames[monthKey] || '11';
-    const yearStr = mMatch[2] || '2026';
-    startDate = `${yearStr}-${monthNum}-15`;
+    const currentYear = new Date().getFullYear();
+    const candidateYear = Number.parseInt(mMatch[2] || `${currentYear}`, 10);
+    const isoCandidate = `${candidateYear}-${monthNum}-15`;
+    // Without an explicit year, assume the upcoming occurrence of that month.
+    startDate = isoCandidate >= new Date().toISOString().split('T')[0]
+      ? isoCandidate
+      : `${candidateYear + 1}-${monthNum}-15`;
   }
 
   // Missing fields determination

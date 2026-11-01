@@ -1,22 +1,12 @@
 import React, { useState } from 'react';
 import {
-  Users2,
   Plus,
   Upload,
   Download,
   Search,
-  CheckCircle2,
-  XCircle,
-  HelpCircle,
-  Clock,
-  Phone,
-  Mail,
-  HeartHandshake,
   Edit2,
   Trash2,
   Utensils,
-  Accessibility,
-  Table,
 } from 'lucide-react';
 import {
   AppState,
@@ -26,7 +16,11 @@ import {
   DietaryNeed,
   AccessibilityNeed,
 } from '../../types/index';
-import { formatCurrency } from '../../lib/currency';
+import { computeGuestMetrics } from '../../lib/guestMetrics';
+import { parseGuestsCsv, guestsToCsv } from '../../lib/csv';
+import { describeError } from '../../lib/aiService';
+import { createId } from '../../lib/createId';
+import { ModalShell } from '../ui/ModalShell';
 
 interface GuestsTabProps {
   state: AppState;
@@ -36,8 +30,6 @@ interface GuestsTabProps {
 
 export const GuestsTab: React.FC<GuestsTabProps> = ({ state, onUpdateState, onShowToast }) => {
   const { guests, event } = state;
-  const currency = event.budget.currency;
-  const numFormat = event.budget.numberFormat;
 
   const [searchQuery, setSearchQuery] = useState('');
   const [rsvpFilter, setRsvpFilter] = useState<string>('all');
@@ -60,25 +52,11 @@ export const GuestsTab: React.FC<GuestsTabProps> = ({ state, onUpdateState, onSh
   const [gTable, setGTable] = useState('');
   const [gNotes, setGNotes] = useState('');
 
-  // Attendance metrics
+  // Attendance metrics (single source of truth for headcount arithmetic)
+  const metrics = computeGuestMetrics(guests);
   const attendingGuests = guests.filter((g) => g.rsvpStatus === 'attending');
-  const declinedGuests = guests.filter((g) => g.rsvpStatus === 'declined');
   const tentativeGuests = guests.filter((g) => g.rsvpStatus === 'tentative');
-  const pendingGuests = guests.filter((g) => g.rsvpStatus === 'pending');
-
-  const confirmedAttendingHeadcount = attendingGuests.reduce(
-    (sum, g) => sum + 1 + (g.plusOnes || 0),
-    0
-  );
-  const tentativeHeadcount = tentativeGuests.reduce(
-    (sum, g) => sum + 1 + (g.plusOnes || 0),
-    0
-  );
-
-  // Expected attendance = confirmed + 50% of tentative
-  const expectedAttendance = Math.round(
-    confirmedAttendingHeadcount + tentativeHeadcount * 0.5
-  );
+  const pendingEntries = guests.filter((g) => g.rsvpStatus === 'pending');
 
   // Dietary counts
   const dietaryCounts: Record<string, number> = {};
@@ -131,7 +109,7 @@ export const GuestsTab: React.FC<GuestsTabProps> = ({ state, onUpdateState, onSh
       onShowToast('success', 'Guest Updated', gName);
     } else {
       const newGuest: Guest = {
-        id: `g_${Date.now()}`,
+        id: createId('g'),
         name: gName,
         group: gGroup,
         rsvpStatus: gRsvp,
@@ -156,22 +134,9 @@ export const GuestsTab: React.FC<GuestsTabProps> = ({ state, onUpdateState, onSh
     onShowToast('info', 'Guest Removed');
   };
 
+  /** Downloads a formula-safe, RFC 4180 encoded CSV. */
   const handleExportCsv = () => {
-    const headers = ['Name', 'Group', 'RSVP Status', 'Plus Ones', 'Phone', 'Email', 'Dietary', 'Accessibility', 'Table', 'Notes'];
-    const rows = guests.map((g) => [
-      `"${g.name}"`,
-      `"${g.group}"`,
-      `"${g.rsvpStatus}"`,
-      g.plusOnes,
-      `"${g.phone || ''}"`,
-      `"${g.email || ''}"`,
-      `"${g.dietaryNeeds.join('; ')}"`,
-      `"${g.accessibilityNeeds.join('; ')}"`,
-      `"${g.tableNumber || ''}"`,
-      `"${(g.notes || '').replace(/"/g, '""')}"`,
-    ]);
-
-    const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const csvContent = guestsToCsv(guests);
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -184,42 +149,35 @@ export const GuestsTab: React.FC<GuestsTabProps> = ({ state, onUpdateState, onSh
     onShowToast('success', 'Guest List Exported to CSV');
   };
 
+  /**
+   * Imports guests from pasted CSV through the shared parser, which validates
+   * enum fields and caps row/cell sizes instead of trusting raw input.
+   */
   const handleImportCsv = (e: React.FormEvent) => {
     e.preventDefault();
     if (!csvInput.trim()) return;
 
     try {
-      const lines = csvInput.split('\n').filter((l) => l.trim().length > 0);
-      const imported: Guest[] = [];
+      const { guests: imported, errors } = parseGuestsCsv(csvInput, {
+        idFactory: () => createId('g_imp'),
+      });
 
-      for (let i = 0; i < lines.length; i++) {
-        // Skip header if line includes 'name'
-        if (i === 0 && lines[0].toLowerCase().includes('name')) continue;
-
-        const parts = lines[i].split(',').map((p) => p.replace(/^"|"$/g, '').trim());
-        if (!parts[0]) continue;
-
-        imported.push({
-          id: `g_import_${Date.now()}_${i}`,
-          name: parts[0],
-          group: (parts[1] as GuestGroup) || 'family',
-          rsvpStatus: (parts[2] as RsvpStatus) || 'pending',
-          plusOnes: parseInt(parts[3]) || 0,
-          phone: parts[4] || undefined,
-          email: parts[5] || undefined,
-          dietaryNeeds: parts[6] ? (parts[6].split(';') as any) : ['none'],
-          accessibilityNeeds: parts[7] ? (parts[7].split(';') as any) : ['none'],
-          tableNumber: parts[8] || undefined,
-          notes: parts[9] || undefined,
-        });
+      if (imported.length === 0) {
+        const firstError = errors[0] || 'No guest rows could be parsed.';
+        onShowToast('error', 'CSV Import Failed', firstError);
+        return;
       }
 
       onUpdateState({ ...state, guests: [...guests, ...imported] });
       setCsvModalOpen(false);
       setCsvInput('');
-      onShowToast('success', 'CSV Import Complete', `Added ${imported.length} guests.`);
-    } catch (err: any) {
-      onShowToast('error', 'CSV Import Error', err?.message || 'Check CSV syntax');
+      onShowToast(
+        errors.length > 0 ? 'warning' : 'success',
+        'CSV Import Complete',
+        `Added ${imported.length} guests.${errors.length > 0 ? ` ${errors.length} row(s) skipped: ${errors[0]}` : ''}`
+      );
+    } catch (err: unknown) {
+      onShowToast('error', 'CSV Import Error', describeError(err));
     }
   };
 
@@ -229,9 +187,9 @@ export const GuestsTab: React.FC<GuestsTabProps> = ({ state, onUpdateState, onSh
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold font-editorial text-slate-900">
-            Guest List, RSVP Registry &amp; Hospitality
+            Guest List, RSVP Registry & Hospitality
           </h2>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-slate-600">
             Track headcounts, plus-ones, meal requirements, and accessibility arrangements
           </p>
         </div>
@@ -241,7 +199,7 @@ export const GuestsTab: React.FC<GuestsTabProps> = ({ state, onUpdateState, onSh
             onClick={() => setCsvModalOpen(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
           >
-            <Upload className="w-3.5 h-3.5 text-purple-900" />
+            <Upload className="w-3.5 h-3.5 text-purple-900" aria-hidden="true" />
             <span>Import CSV</span>
           </button>
 
@@ -249,7 +207,7 @@ export const GuestsTab: React.FC<GuestsTabProps> = ({ state, onUpdateState, onSh
             onClick={handleExportCsv}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
           >
-            <Download className="w-3.5 h-3.5 text-indigo-700" />
+            <Download className="w-3.5 h-3.5 text-indigo-700" aria-hidden="true" />
             <span>Export CSV</span>
           </button>
 
@@ -270,7 +228,7 @@ export const GuestsTab: React.FC<GuestsTabProps> = ({ state, onUpdateState, onSh
             }}
             className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-lg bg-purple-900 hover:bg-purple-950 text-white shadow-xs transition-colors cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5 text-amber-300" />
+            <Plus className="w-3.5 h-3.5 text-amber-300" aria-hidden="true" />
             <span>Add Guest</span>
           </button>
         </div>
@@ -279,57 +237,59 @@ export const GuestsTab: React.FC<GuestsTabProps> = ({ state, onUpdateState, onSh
       {/* Attendance KPI Summary */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-[11px] text-slate-500 block">Total Invited</span>
+          <span className="text-[11px] text-slate-600 block">Total Invited</span>
           <span className="text-lg font-bold text-slate-900 block mt-0.5">
-            {guests.length} Entries
+            {metrics.invitedHeadcount} Pax
           </span>
-          <span className="text-[10px] text-slate-400">Target: {event.guests.count}</span>
+          <span className="text-[10px] text-slate-600">
+            {guests.length} entries • Target: {event.guests.count}
+          </span>
         </div>
 
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
           <span className="text-[11px] text-emerald-700 font-semibold block">Confirmed Attending</span>
           <span className="text-lg font-bold text-emerald-800 block mt-0.5">
-            {confirmedAttendingHeadcount} Pax
+            {metrics.confirmedHeadcount} Pax
           </span>
-          <span className="text-[10px] text-slate-400">{attendingGuests.length} parties</span>
+          <span className="text-[10px] text-slate-600">{attendingGuests.length} parties</span>
         </div>
 
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
           <span className="text-[11px] text-amber-700 font-semibold block">Tentative</span>
           <span className="text-lg font-bold text-amber-800 block mt-0.5">
-            {tentativeHeadcount} Pax
+            {metrics.tentativeHeadcount} Pax
           </span>
-          <span className="text-[10px] text-slate-400">{tentativeGuests.length} parties</span>
+          <span className="text-[10px] text-slate-600">{tentativeGuests.length} parties</span>
         </div>
 
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-[11px] text-slate-500 block">Pending RSVP</span>
+          <span className="text-[11px] text-slate-600 block">Pending RSVP</span>
           <span className="text-lg font-bold text-slate-700 block mt-0.5">
-            {pendingGuests.length}
+            {pendingEntries.length}
           </span>
-          <span className="text-[10px] text-slate-400">Follow-up needed</span>
+          <span className="text-[10px] text-slate-600">Follow-up needed</span>
         </div>
 
-        <div className="bg-white p-3.5 rounded-xl border border-purple-200 bg-purple-50/40 shadow-2xs">
+        <div className="p-3.5 rounded-xl border border-purple-200 bg-purple-50/40 shadow-2xs">
           <span className="text-[11px] text-purple-900 font-bold block">
             Expected Attendance
           </span>
           <span className="text-lg font-extrabold text-purple-950 block mt-0.5">
-            {expectedAttendance > 0 ? expectedAttendance : event.guests.count} Pax
+            {metrics.expectedAttendance > 0 ? metrics.expectedAttendance : event.guests.expectedAttendance} Pax
           </span>
-          <span className="text-[10px] text-purple-800">Catering sync model</span>
+          <span className="text-[10px] text-purple-900">Confirmed + 50% of tentative</span>
         </div>
       </div>
 
       {/* Dietary & Accessibility Breakdown Badges */}
       <div className="bg-[#FAF7F2] border border-[#E7E0D6] p-4 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="font-bold text-slate-700 flex items-center gap-1.5">
-            <Utensils className="w-4 h-4 text-purple-900" />
+          <span className="font-bold text-slate-800 flex items-center gap-1.5">
+            <Utensils className="w-4 h-4 text-purple-900" aria-hidden="true" />
             Dietary Portions:
           </span>
           {Object.keys(dietaryCounts).length === 0 ? (
-            <span className="text-slate-400 italic">No specific preferences recorded yet</span>
+            <span className="text-slate-600 italic">No specific preferences recorded yet</span>
           ) : (
             Object.entries(dietaryCounts).map(([diet, count]) => (
               <span
@@ -346,8 +306,10 @@ export const GuestsTab: React.FC<GuestsTabProps> = ({ state, onUpdateState, onSh
       {/* Filter and Search */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
+          <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-3" aria-hidden="true" />
+          <label htmlFor="guest-search" className="sr-only">Search by guest name or notes</label>
           <input
+            id="guest-search"
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -357,10 +319,12 @@ export const GuestsTab: React.FC<GuestsTabProps> = ({ state, onUpdateState, onSh
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="guest-rsvp-filter" className="sr-only">Filter by RSVP status</label>
           <select
+            id="guest-rsvp-filter"
             value={rsvpFilter}
             onChange={(e) => setRsvpFilter(e.target.value)}
-            className="px-2.5 py-2 border border-slate-200 rounded-lg bg-white text-slate-700 font-medium"
+            className="px-2.5 py-2 border border-slate-200 rounded-lg bg-white text-slate-800 font-medium"
           >
             <option value="all">All RSVPs</option>
             <option value="attending">Attending</option>
@@ -369,10 +333,12 @@ export const GuestsTab: React.FC<GuestsTabProps> = ({ state, onUpdateState, onSh
             <option value="declined">Declined</option>
           </select>
 
+          <label htmlFor="guest-group-filter" className="sr-only">Filter by group</label>
           <select
+            id="guest-group-filter"
             value={groupFilter}
             onChange={(e) => setGroupFilter(e.target.value)}
-            className="px-2.5 py-2 border border-slate-200 rounded-lg bg-white text-slate-700 font-medium"
+            className="px-2.5 py-2 border border-slate-200 rounded-lg bg-white text-slate-800 font-medium"
           >
             <option value="all">All Groups</option>
             <option value="family">Family</option>
@@ -389,15 +355,15 @@ export const GuestsTab: React.FC<GuestsTabProps> = ({ state, onUpdateState, onSh
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         <table className="w-full text-left border-collapse text-xs">
           <thead>
-            <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-semibold uppercase text-[10px] tracking-wider">
-              <th className="py-3 px-4">Guest Name &amp; Contact</th>
-              <th className="py-3 px-4">Group</th>
-              <th className="py-3 px-4 text-center">RSVP</th>
-              <th className="py-3 px-4 text-center">Plus Ones</th>
-              <th className="py-3 px-4">Dietary</th>
-              <th className="py-3 px-4">Accessibility</th>
-              <th className="py-3 px-4">Table</th>
-              <th className="py-3 px-4 text-center">Actions</th>
+            <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-700 font-semibold uppercase text-[10px] tracking-wider">
+              <th scope="col" className="py-3 px-4">Guest Name & Contact</th>
+              <th scope="col" className="py-3 px-4">Group</th>
+              <th scope="col" className="py-3 px-4 text-center">RSVP</th>
+              <th scope="col" className="py-3 px-4 text-center">Plus Ones</th>
+              <th scope="col" className="py-3 px-4">Dietary</th>
+              <th scope="col" className="py-3 px-4">Accessibility</th>
+              <th scope="col" className="py-3 px-4">Table</th>
+              <th scope="col" className="py-3 px-4 text-center">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -405,14 +371,14 @@ export const GuestsTab: React.FC<GuestsTabProps> = ({ state, onUpdateState, onSh
               <tr key={g.id} className="hover:bg-slate-50/60 transition-colors">
                 <td className="py-3 px-4">
                   <span className="font-bold text-slate-900 block">{g.name}</span>
-                  <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+                  <div className="flex items-center gap-2 text-[11px] text-slate-600 mt-0.5">
                     {g.phone && <span>{g.phone}</span>}
                     {g.email && <span>{g.email}</span>}
                   </div>
                 </td>
 
                 <td className="py-3 px-4 capitalize font-medium text-slate-700">
-                  <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                  <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-800">
                     {g.group.replace('_', ' ')}
                   </span>
                 </td>
@@ -426,7 +392,7 @@ export const GuestsTab: React.FC<GuestsTabProps> = ({ state, onUpdateState, onSh
                         ? 'bg-amber-100 text-amber-800'
                         : g.rsvpStatus === 'declined'
                         ? 'bg-rose-100 text-rose-800'
-                        : 'bg-slate-200 text-slate-700'
+                        : 'bg-slate-200 text-slate-800'
                     }`}
                   >
                     {g.rsvpStatus}
@@ -484,15 +450,17 @@ export const GuestsTab: React.FC<GuestsTabProps> = ({ state, onUpdateState, onSh
                         setGNotes(g.notes || '');
                         setGuestModalOpen(true);
                       }}
-                      className="p-1 text-slate-400 hover:text-slate-700 rounded transition-colors"
+                      className="p-1 text-slate-500 hover:text-slate-800 rounded transition-colors cursor-pointer"
+                      aria-label={`Edit guest ${g.name}`}
                     >
-                      <Edit2 className="w-3.5 h-3.5" />
+                      <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
                     </button>
                     <button
                       onClick={() => handleDeleteGuest(g.id)}
-                      className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                      className="p-1 text-slate-500 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                      aria-label={`Delete guest ${g.name}`}
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                     </button>
                   </div>
                 </td>
@@ -503,183 +471,190 @@ export const GuestsTab: React.FC<GuestsTabProps> = ({ state, onUpdateState, onSh
       </div>
 
       {/* CSV Import Modal */}
-      {csvModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <form
-            onSubmit={handleImportCsv}
-            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 space-y-4 animate-in fade-in zoom-in-95"
-          >
-            <h3 className="text-base font-bold text-slate-900 font-editorial">
-              Import Guests from CSV Text
-            </h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Paste comma-separated rows. Required format:{' '}
-              <code>Name, Group, RSVP Status, Plus Ones, Phone, Email, Dietary, Accessibility, Table, Notes</code>
-            </p>
+      <ModalShell
+        isOpen={csvModalOpen}
+        onClose={() => setCsvModalOpen(false)}
+        title="Import Guests from CSV Text"
+        maxWidthClassName="max-w-lg"
+        bodyClassName="p-6"
+      >
+        <form onSubmit={handleImportCsv} className="space-y-4">
+          <p className="text-xs text-slate-600 leading-relaxed">
+            Paste comma-separated rows. Required format:{' '}
+            <code>Name, Group, RSVP Status, Plus Ones, Phone, Email, Dietary, Accessibility, Table, Notes</code>
+          </p>
 
-            <textarea
-              rows={6}
-              required
-              value={csvInput}
-              onChange={(e) => setCsvInput(e.target.value)}
-              placeholder="Name, Group, RSVP Status, Plus Ones, Phone, Email, Dietary, Accessibility, Table, Notes&#10;Aarav Verma, family, attending, 1, +91 9820011111, aarav@example.com, veg, none, Table 2, Groom cousin"
-              className="w-full text-xs p-3 font-mono border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-700 outline-hidden bg-[#FAF9F7]"
-            />
+          <label htmlFor="csv-input" className="block text-xs font-medium text-slate-800">
+            CSV content
+          </label>
+          <textarea
+            id="csv-input"
+            rows={6}
+            required
+            value={csvInput}
+            onChange={(e) => setCsvInput(e.target.value)}
+            placeholder="Name, Group, RSVP Status, Plus Ones, Phone, Email, Dietary, Accessibility, Table, Notes&#10;Aarav Verma, family, attending, 1, +91 9820011111, aarav@example.com, veg, none, Table 2, Groom cousin"
+            className="w-full text-xs p-3 font-mono border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-700 outline-hidden bg-[#FAF9F7]"
+          />
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => setCsvModalOpen(false)}
-                className="text-xs px-3 py-1.5 text-slate-600 hover:text-slate-900"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-purple-900 text-white rounded-lg text-xs font-bold hover:bg-purple-950 transition-colors"
-              >
-                Process CSV Import
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={() => setCsvModalOpen(false)}
+              className="text-xs px-3 py-1.5 text-slate-600 hover:text-slate-900 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-purple-900 text-white rounded-lg text-xs font-bold hover:bg-purple-950 transition-colors cursor-pointer"
+            >
+              Process CSV Import
+            </button>
+          </div>
+        </form>
+      </ModalShell>
 
       {/* Guest Add / Edit Modal */}
-      {guestModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <form
-            onSubmit={handleSaveGuest}
-            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 space-y-4 max-h-[85vh] overflow-y-auto animate-in fade-in zoom-in-95"
-          >
-            <h3 className="text-base font-bold text-slate-900 font-editorial">
-              {editingGuest ? 'Edit Guest Details' : 'Add Guest Entry'}
-            </h3>
+      <ModalShell
+        isOpen={guestModalOpen}
+        onClose={() => setGuestModalOpen(false)}
+        title={editingGuest ? 'Edit Guest Details' : 'Add Guest Entry'}
+        maxWidthClassName="max-w-md"
+        bodyClassName="p-6 max-h-[85vh] overflow-y-auto"
+      >
+        <form onSubmit={handleSaveGuest} className="space-y-4">
+          <div>
+            <label htmlFor="guest-name" className="block text-xs font-medium text-slate-800 mb-1">Full Name</label>
+            <input
+              id="guest-name"
+              type="text"
+              required
+              value={gName}
+              onChange={(e) => setGName(e.target.value)}
+              placeholder="e.g. Ramesh & Savita Gupta"
+              className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="guest-group" className="block text-xs font-medium text-slate-800 mb-1">Group</label>
+              <select
+                id="guest-group"
+                value={gGroup}
+                onChange={(e) => setGGroup(e.target.value as GuestGroup)}
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
+              >
+                <option value="family">Family</option>
+                <option value="friends">Friends</option>
+                <option value="colleagues">Colleagues</option>
+                <option value="vip">VIP</option>
+                <option value="bride_side">Bride Side</option>
+                <option value="groom_side">Groom Side</option>
+              </select>
+            </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Full Name</label>
+              <label htmlFor="guest-rsvp" className="block text-xs font-medium text-slate-800 mb-1">RSVP Status</label>
+              <select
+                id="guest-rsvp"
+                value={gRsvp}
+                onChange={(e) => setGRsvp(e.target.value as RsvpStatus)}
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
+              >
+                <option value="attending">Attending</option>
+                <option value="tentative">Tentative</option>
+                <option value="pending">Pending</option>
+                <option value="declined">Declined</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="guest-plus-ones" className="block text-xs font-medium text-slate-800 mb-1">
+                Plus Ones Count
+              </label>
               <input
-                type="text"
-                required
-                value={gName}
-                onChange={(e) => setGName(e.target.value)}
-                placeholder="e.g. Ramesh & Savita Gupta"
+                id="guest-plus-ones"
+                type="number"
+                min="0"
+                max="20"
+                value={gPlusOnes}
+                onChange={(e) => setGPlusOnes(parseInt(e.target.value) || 0)}
                 className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
               />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Group</label>
-                <select
-                  value={gGroup}
-                  onChange={(e) => setGGroup(e.target.value as GuestGroup)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
-                >
-                  <option value="family">Family</option>
-                  <option value="friends">Friends</option>
-                  <option value="colleagues">Colleagues</option>
-                  <option value="vip">VIP</option>
-                  <option value="bride_side">Bride Side</option>
-                  <option value="groom_side">Groom Side</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">RSVP Status</label>
-                <select
-                  value={gRsvp}
-                  onChange={(e) => setGRsvp(e.target.value as RsvpStatus)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
-                >
-                  <option value="attending">Attending</option>
-                  <option value="tentative">Tentative</option>
-                  <option value="pending">Pending</option>
-                  <option value="declined">Declined</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Plus Ones Count
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="10"
-                  value={gPlusOnes}
-                  onChange={(e) => setGPlusOnes(parseInt(e.target.value) || 0)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Table Seating</label>
-                <input
-                  type="text"
-                  value={gTable}
-                  onChange={(e) => setGTable(e.target.value)}
-                  placeholder="e.g. Table 1"
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Phone</label>
-                <input
-                  type="text"
-                  value={gPhone}
-                  onChange={(e) => setGPhone(e.target.value)}
-                  placeholder="+91..."
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Email</label>
-                <input
-                  type="email"
-                  value={gEmail}
-                  onChange={(e) => setGEmail(e.target.value)}
-                  placeholder="name@example.com"
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-                />
-              </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Notes</label>
-              <textarea
-                rows={2}
-                value={gNotes}
-                onChange={(e) => setGNotes(e.target.value)}
-                placeholder="Elderly room proximity, arrival time..."
+              <label htmlFor="guest-table" className="block text-xs font-medium text-slate-800 mb-1">Table Seating</label>
+              <input
+                id="guest-table"
+                type="text"
+                value={gTable}
+                onChange={(e) => setGTable(e.target.value)}
+                placeholder="e.g. Table 1"
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="guest-phone" className="block text-xs font-medium text-slate-800 mb-1">Phone</label>
+              <input
+                id="guest-phone"
+                type="text"
+                value={gPhone}
+                onChange={(e) => setGPhone(e.target.value)}
+                placeholder="+91..."
                 className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
               />
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => setGuestModalOpen(false)}
-                className="text-xs px-3 py-1.5 text-slate-600 hover:text-slate-900"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-purple-900 text-white rounded-lg text-xs font-bold hover:bg-purple-950 transition-colors cursor-pointer"
-              >
-                Save Guest
-              </button>
+            <div>
+              <label htmlFor="guest-email" className="block text-xs font-medium text-slate-800 mb-1">Email</label>
+              <input
+                id="guest-email"
+                type="email"
+                value={gEmail}
+                onChange={(e) => setGEmail(e.target.value)}
+                placeholder="name@example.com"
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+              />
             </div>
-          </form>
-        </div>
-      )}
+          </div>
+
+          <div>
+            <label htmlFor="guest-notes" className="block text-xs font-medium text-slate-800 mb-1">Notes</label>
+            <textarea
+              id="guest-notes"
+              rows={2}
+              value={gNotes}
+              onChange={(e) => setGNotes(e.target.value)}
+              placeholder="Elderly room proximity, arrival time..."
+              className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={() => setGuestModalOpen(false)}
+              className="text-xs px-3 py-1.5 text-slate-600 hover:text-slate-900 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-purple-900 text-white rounded-lg text-xs font-bold hover:bg-purple-950 transition-colors cursor-pointer"
+            >
+              Save Guest
+            </button>
+          </div>
+        </form>
+      </ModalShell>
     </div>
   );
 };

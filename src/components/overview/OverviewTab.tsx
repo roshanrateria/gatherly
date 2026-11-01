@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  Calendar,
   Users,
   DollarSign,
   CheckCircle2,
@@ -8,17 +7,14 @@ import {
   Building2,
   Clock,
   ArrowUpRight,
-  TrendingUp,
   Sparkles,
-  ShieldAlert,
-  ChevronRight,
-  Check,
-  ListTodo,
 } from 'lucide-react';
 import { AppState } from '../../types/index';
 import { calculateBudgetSummary } from '../../lib/deterministicBudget';
 import { calculateDaysBetween } from '../../lib/deterministicTimeline';
 import { formatCurrency } from '../../lib/currency';
+import { budgetBasisGuestCount, computeGuestMetrics } from '../../lib/guestMetrics';
+import { todayISO } from '../../lib/dates';
 import { ActiveTab } from '../Navbar';
 
 interface OverviewTabProps {
@@ -27,6 +23,16 @@ interface OverviewTabProps {
   onOpenProposalModal: () => void;
   unappliedProposalsCount: number;
 }
+
+type NextStep = {
+  title: string;
+  desc: string;
+  actionTab: ActiveTab;
+  badge: string;
+  priority: 'urgent' | 'high' | 'medium' | 'low';
+  /** When set, the row triggers this direct action instead of tab navigation. */
+  directAction?: () => void;
+};
 
 export const OverviewTab: React.FC<OverviewTabProps> = ({
   state,
@@ -38,23 +44,26 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   const currency = event.budget.currency;
   const numFormat = event.budget.numberFormat;
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = todayISO();
   const daysRemaining = calculateDaysBetween(todayStr, event.startDate);
 
-  // Deterministic calculations
+  // Deterministic calculations (roster-aware guest basis, never party size)
   const budgetSummary = calculateBudgetSummary(
     event.budget.total,
     categories,
     expenses,
-    guests.length > 0 ? guests.length : event.guests.count
+    budgetBasisGuestCount(state)
   );
 
-  // Guests summary
-  const attendingGuests = guests.filter((g) => g.rsvpStatus === 'attending');
-  const pendingGuests = guests.filter((g) => g.rsvpStatus === 'pending');
-  const tentativeGuests = guests.filter((g) => g.rsvpStatus === 'tentative');
-  const confirmedCount = attendingGuests.reduce((sum, g) => sum + 1 + (g.plusOnes || 0), 0);
-  const totalTargetGuests = event.guests.count;
+  // Guests summary: real RSVP arithmetic from the roster
+  const guestMetrics = computeGuestMetrics(guests);
+  const rosterHasData = guests.length > 0;
+  const expectedGuests = rosterHasData
+    ? guestMetrics.expectedAttendance
+    : event.guests.expectedAttendance;
+  const expectedGuestsBasis = rosterHasData
+    ? `${guestMetrics.confirmedHeadcount} confirmed${guestMetrics.tentativeHeadcount > 0 ? ` + 50% of ${guestMetrics.tentativeHeadcount} tentative` : ''} from ${guestMetrics.invitedHeadcount} invited`
+    : `Estimate without RSVP data — target invited ${event.guests.count}`;
 
   // Tasks summary
   const completedTasks = tasks.filter((t) => t.status === 'done').length;
@@ -62,7 +71,6 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   const taskProgressPct = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
   // Milestones summary
-  const completedMilestones = milestones.filter((m) => m.completed).length;
   const atRiskMilestones = milestones.filter((m) => m.isAtRisk && !m.completed);
 
   // Vendors summary
@@ -83,14 +91,15 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   healthScore = Math.max(20, Math.min(98, healthScore));
 
   // Dynamic Next Steps based on state
-  const dynamicNextSteps = [];
+  const dynamicNextSteps: NextStep[] = [];
   if (unappliedProposalsCount > 0) {
     dynamicNextSteps.push({
       title: 'Review Pending AI Proposals',
-      desc: `${unappliedProposalsCount} optimization proposals waiting for review.`,
+      desc: `${unappliedProposalsCount} optimization proposal${unappliedProposalsCount === 1 ? '' : 's'} waiting for review.`,
       actionTab: 'planner' as ActiveTab,
       badge: 'Action Required',
       priority: 'urgent',
+      directAction: onOpenProposalModal,
     });
   }
   if (budgetSummary.isOverrun) {
@@ -192,22 +201,22 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         </div>
 
         {/* Decorative background glow */}
-        <div className="absolute -top-12 -right-12 w-64 h-64 bg-rose-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -top-12 -right-12 w-64 h-64 bg-rose-500/10 rounded-full blur-3xl pointer-events-none" aria-hidden="true" />
       </div>
 
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Budget Card */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-          <div className="flex items-center justify-between text-xs text-slate-500">
+          <div className="flex items-center justify-between text-xs text-slate-600">
             <span>Target Budget</span>
-            <DollarSign className="w-4 h-4 text-purple-800" />
+            <DollarSign className="w-4 h-4 text-purple-800" aria-hidden="true" />
           </div>
           <div className="text-lg sm:text-xl font-bold text-slate-900">
             {formatCurrency(budgetSummary.totalBudget, currency, numFormat)}
           </div>
           <div className="flex items-center justify-between text-[11px] pt-1">
-            <span className="text-slate-500">Remaining</span>
+            <span className="text-slate-600">Remaining</span>
             <span
               className={`font-semibold ${
                 budgetSummary.remainingBalance < 0 ? 'text-rose-600' : 'text-emerald-700'
@@ -218,32 +227,43 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           </div>
         </div>
 
-        {/* Guests Attendance Card */}
+        {/* Guests Attendance Card: RSVP-driven expectation, kept separate from target count */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-          <div className="flex items-center justify-between text-xs text-slate-500">
+          <div className="flex items-center justify-between text-xs text-slate-600">
             <span>Expected Guests</span>
-            <Users className="w-4 h-4 text-indigo-700" />
+            <Users className="w-4 h-4 text-indigo-700" aria-hidden="true" />
           </div>
           <div className="text-lg sm:text-xl font-bold text-slate-900">
-            {confirmedCount > 0 ? confirmedCount : totalTargetGuests} Pax
+            {expectedGuests} Pax
           </div>
-          <div className="flex items-center justify-between text-[11px] pt-1">
-            <span className="text-slate-500">Target Headcount</span>
-            <span className="font-semibold text-slate-700">{totalTargetGuests} invited</span>
+          <div
+            className="flex items-center justify-between text-[11px] pt-1 gap-2"
+            title={expectedGuestsBasis}
+          >
+            <span className="text-slate-600 shrink-0">
+              {rosterHasData
+                ? `${guestMetrics.confirmedHeadcount} confirmed`
+                : 'Target headcount'}
+            </span>
+            <span className="font-semibold text-slate-700 text-right">
+              {rosterHasData
+                ? `${guestMetrics.invitedHeadcount} invited`
+                : `${event.guests.count} invited`}
+            </span>
           </div>
         </div>
 
         {/* Task Progress Card */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-          <div className="flex items-center justify-between text-xs text-slate-500">
+          <div className="flex items-center justify-between text-xs text-slate-600">
             <span>Tasks Completed</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-700" aria-hidden="true" />
           </div>
           <div className="text-lg sm:text-xl font-bold text-slate-900">
             {completedTasks} / {totalTasks} ({taskProgressPct}%)
           </div>
           {/* Progress bar */}
-          <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2">
+          <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2" role="status" aria-label={`Task progress: ${taskProgressPct}%`}>
             <div
               className="bg-emerald-600 h-1.5 rounded-full transition-all duration-500"
               style={{ width: `${taskProgressPct}%` }}
@@ -253,15 +273,15 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
         {/* Vendors Status Card */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-          <div className="flex items-center justify-between text-xs text-slate-500">
+          <div className="flex items-center justify-between text-xs text-slate-600">
             <span>Vendors Booked</span>
-            <Building2 className="w-4 h-4 text-amber-700" />
+            <Building2 className="w-4 h-4 text-amber-700" aria-hidden="true" />
           </div>
           <div className="text-lg sm:text-xl font-bold text-slate-900">
             {bookedVendors} of {vendors.length} Contracted
           </div>
           <div className="flex items-center justify-between text-[11px] pt-1">
-            <span className="text-slate-500">Payments Disbursed</span>
+            <span className="text-slate-600">Payments Disbursed</span>
             <span className="font-semibold text-slate-700">
               {formatCurrency(budgetSummary.totalPaid, currency, numFormat)}
             </span>
@@ -276,15 +296,15 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-purple-900" />
+                <Sparkles className="w-5 h-5 text-purple-900" aria-hidden="true" />
                 <h3 className="text-base font-bold text-slate-900 font-editorial">
                   Recommended Next Steps
                 </h3>
               </div>
-              <span className="text-xs text-slate-500">Adaptive Dynamic Priority Engine</span>
+              <span className="text-xs text-slate-600">Adaptive Dynamic Priority Engine</span>
             </div>
 
-            <div className="space-y-2.5">
+            <ul className="space-y-2.5 list-none">
               {dynamicNextSteps.map((step, idx) => {
                 const priorityStyles = {
                   urgent: 'border-l-4 border-l-rose-500 bg-rose-50/50',
@@ -294,56 +314,61 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 }[step.priority];
 
                 return (
-                  <div
-                    key={idx}
-                    onClick={() => onNavigateTab(step.actionTab)}
-                    className={`p-3.5 rounded-xl border border-slate-200/80 hover:border-slate-300 transition-all flex items-center justify-between gap-3 cursor-pointer group ${priorityStyles}`}
-                  >
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-slate-900 group-hover:text-purple-900 transition-colors">
-                          {step.title}
-                        </span>
-                        <span className="text-[10px] font-semibold px-2 py-0.2 rounded-md bg-white border border-slate-200 text-slate-700">
-                          {step.badge}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-600 leading-relaxed">{step.desc}</p>
-                    </div>
-
+                  <li key={`${step.title}-${idx}`}>
                     <button
-                      className="shrink-0 p-1.5 rounded-lg text-slate-400 group-hover:text-purple-900 group-hover:bg-purple-100 transition-colors"
-                      aria-label="Open tab"
+                      type="button"
+                      onClick={() => {
+                        if (step.directAction) step.directAction();
+                        else onNavigateTab(step.actionTab);
+                      }}
+                      className={`w-full text-left p-3.5 rounded-xl border border-slate-200/80 hover:border-slate-400 hover:bg-slate-50 transition-all flex items-center justify-between gap-3 cursor-pointer group focus-visible:outline-hidden ${priorityStyles}`}
                     >
-                      <ChevronRight className="w-4 h-4" />
+                      <span className="space-y-0.5">
+                        <span className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-900 group-hover:text-purple-900 transition-colors">
+                            {step.title}
+                          </span>
+                          <span className="text-[10px] font-semibold px-2 py-0.2 rounded-md bg-white border border-slate-200 text-slate-700">
+                            {step.badge}
+                          </span>
+                        </span>
+                        <span className="block text-xs text-slate-700 leading-relaxed">{step.desc}</span>
+                      </span>
+
+                      <span
+                        className="shrink-0 p-1.5 rounded-lg text-slate-500 group-hover:text-purple-900 group-hover:bg-purple-100 transition-colors"
+                        aria-hidden="true"
+                      >
+                        →
+                      </span>
                     </button>
-                  </div>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           </div>
 
           {/* Upcoming Key Milestones */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Clock className="w-5 h-5 text-indigo-800" />
+                <Clock className="w-5 h-5 text-indigo-800" aria-hidden="true" />
                 <h3 className="text-base font-bold text-slate-900 font-editorial">
                   Key Upcoming Milestones
                 </h3>
               </div>
               <button
                 onClick={() => onNavigateTab('timeline')}
-                className="text-xs font-semibold text-purple-900 hover:text-purple-950 flex items-center gap-1"
+                className="text-xs font-semibold text-purple-900 hover:text-purple-950 flex items-center gap-1 cursor-pointer"
               >
                 <span>View Timeline</span>
-                <ArrowUpRight className="w-3.5 h-3.5" />
+                <ArrowUpRight className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             </div>
 
-            <div className="space-y-2.5">
+            <ul className="space-y-2.5 list-none">
               {milestones.slice(0, 4).map((m) => (
-                <div
+                <li
                   key={m.id}
                   className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-[#FAF9F7] text-xs"
                 >
@@ -356,12 +381,13 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                           ? 'bg-rose-500 animate-pulse'
                           : 'bg-amber-500'
                       }`}
+                      aria-hidden="true"
                     />
                     <div>
-                      <span className={`font-semibold ${m.completed ? 'line-through text-slate-400' : 'text-slate-900'}`}>
+                      <span className={`font-semibold ${m.completed ? 'line-through text-slate-600' : 'text-slate-900'}`}>
                         {m.title}
                       </span>
-                      <span className="text-[11px] text-slate-500 block">
+                      <span className="text-[11px] text-slate-600 block">
                         Category: {m.category} • Due: {m.dueDate}
                       </span>
                     </div>
@@ -373,14 +399,14 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                         ? 'bg-emerald-100 text-emerald-800'
                         : m.isAtRisk
                         ? 'bg-rose-100 text-rose-800'
-                        : 'bg-slate-200 text-slate-700'
+                        : 'bg-slate-200 text-slate-800'
                     }`}
                   >
                     {m.completed ? 'Done' : m.isAtRisk ? 'At Risk' : `${m.daysBeforeEvent}d before`}
                   </span>
-                </div>
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
         </div>
 
@@ -393,33 +419,33 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               </h3>
               <button
                 onClick={() => onNavigateTab('budget')}
-                className="text-xs font-semibold text-purple-900 hover:text-purple-950 flex items-center gap-1"
+                className="text-xs font-semibold text-purple-900 hover:text-purple-950 flex items-center gap-1 cursor-pointer"
               >
                 <span>Details</span>
-                <ArrowUpRight className="w-3.5 h-3.5" />
+                <ArrowUpRight className="w-3.5 h-3.5" aria-hidden="true" />
               </button>
             </div>
 
             {/* Quick Metrics */}
             <div className="p-3 bg-purple-50/60 rounded-xl border border-purple-100 text-xs space-y-1.5">
               <div className="flex justify-between">
-                <span className="text-slate-600">Per-Guest Target</span>
+                <span className="text-slate-700">Per-Guest Target</span>
                 <strong className="text-purple-950 font-bold">
                   {formatCurrency(
-                    Math.round(budgetSummary.totalBudget / Math.max(1, totalTargetGuests)),
+                    Math.round(budgetSummary.totalBudget / Math.max(1, event.guests.count)),
                     currency,
                     numFormat
                   )}
                 </strong>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-600">Allocated</span>
+                <span className="text-slate-700">Allocated</span>
                 <strong className="text-slate-900 font-semibold">
                   {formatCurrency(budgetSummary.totalAllocated, currency, numFormat)}
                 </strong>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-600">Committed (Actual)</span>
+                <span className="text-slate-700">Committed (Actual)</span>
                 <strong className="text-slate-900 font-semibold">
                   {formatCurrency(budgetSummary.totalActual, currency, numFormat)}
                 </strong>
@@ -428,7 +454,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
             {/* Categories Distribution Stacked Bar */}
             <div className="space-y-3 pt-2">
-              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider block">
                 Category Distribution
               </span>
               <div className="space-y-2">
@@ -456,8 +482,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
             {/* Warning if overrun */}
             {budgetSummary.isOverrun && (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 flex items-start gap-2" role="alert">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" aria-hidden="true" />
                 <div>
                   <strong className="font-bold block">Overrun Warning</strong>
                   Expenses exceed budget by{' '}

@@ -1,19 +1,14 @@
 import React, { useState } from 'react';
 import {
-  Lightbulb,
-  Sparkles,
   Plus,
   Bookmark,
   BookmarkCheck,
-  X,
   RefreshCw,
-  Check,
-  Tag,
-  DollarSign,
-  Layers,
 } from 'lucide-react';
 import { AppState, Idea, IdeaCategory, IdeaCostTier } from '../../types/index';
 import { getDefaultIdeasForEvent } from '../../lib/creativeIdeas';
+import { createId } from '../../lib/createId';
+import { ModalShell } from '../ui/ModalShell';
 
 interface IdeasTabProps {
   state: AppState;
@@ -29,7 +24,6 @@ export const IdeasTab: React.FC<IdeasTabProps> = ({ state, onUpdateState, onShow
   const [iTitle, setITitle] = useState('');
   const [iCategory, setICategory] = useState<IdeaCategory>('theme');
   const [iDesc, setIDesc] = useState('');
-  const [iFit, setIFit] = useState('');
   const [iTier, setITier] = useState<IdeaCostTier>('medium');
   const [iRequirements, setIRequirements] = useState('');
 
@@ -39,10 +33,8 @@ export const IdeasTab: React.FC<IdeasTabProps> = ({ state, onUpdateState, onShow
   });
 
   const toggleSaveIdea = (ideaId: string) => {
-    const updated = ideas.map((i) =>
-      i.id === ideaId
-        ? { ...i, status: (i.status === 'saved' ? 'suggested' : 'saved') as any }
-        : i
+    const updated = ideas.map((i): Idea =>
+      i.id === ideaId ? { ...i, status: i.status === 'saved' ? ('suggested' as const) : ('saved' as const) } : i
     );
     onUpdateState({ ...state, ideas: updated });
     onShowToast('success', 'Idea Status Updated');
@@ -70,11 +62,11 @@ export const IdeasTab: React.FC<IdeasTabProps> = ({ state, onUpdateState, onShow
       .filter(Boolean);
 
     const newIdea: Idea = {
-      id: `idea_${Date.now()}`,
+      id: createId('idea'),
       category: iCategory,
       title: iTitle,
       description: iDesc,
-      fitExplanation: iFit || 'Custom host inspiration tailored to guest preferences.',
+      fitExplanation: 'Custom host inspiration tailored to guest preferences.',
       estimatedCostTier: iTier,
       requirements: reqList,
       status: 'saved',
@@ -85,7 +77,6 @@ export const IdeasTab: React.FC<IdeasTabProps> = ({ state, onUpdateState, onShow
     setIdeaModalOpen(false);
     setITitle('');
     setIDesc('');
-    setIFit('');
     setIRequirements('');
     onShowToast('success', 'Custom Concept Added to Plan', iTitle);
   };
@@ -105,7 +96,7 @@ export const IdeasTab: React.FC<IdeasTabProps> = ({ state, onUpdateState, onShow
           <h2 className="text-xl font-bold font-editorial text-slate-900">
             Creative Ideas &amp; Concept Studio
           </h2>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-slate-600">
             Personalized themes, decor blueprints, live menus, entertainment acts and gift concepts
           </p>
         </div>
@@ -115,7 +106,7 @@ export const IdeasTab: React.FC<IdeasTabProps> = ({ state, onUpdateState, onShow
             onClick={handleRegenerateIdeas}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors cursor-pointer"
           >
-            <RefreshCw className="w-3.5 h-3.5 text-purple-900" />
+            <RefreshCw className="w-3.5 h-3.5 text-purple-900" aria-hidden="true" />
             <span>Regenerate Ideas</span>
           </button>
 
@@ -123,14 +114,14 @@ export const IdeasTab: React.FC<IdeasTabProps> = ({ state, onUpdateState, onShow
             onClick={() => setIdeaModalOpen(true)}
             className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-lg bg-purple-900 hover:bg-purple-950 text-white shadow-xs transition-colors cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5 text-amber-300" />
+            <Plus className="w-3.5 h-3.5 text-amber-300" aria-hidden="true" />
             <span>Add Custom Idea</span>
           </button>
         </div>
       </div>
 
       {/* Category Filter Pills */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none text-xs">
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none text-xs" role="group" aria-label="Filter ideas by category">
         {[
           ['all', 'All Inspirations'],
           ['theme', 'Themes & Styling'],
@@ -143,10 +134,11 @@ export const IdeasTab: React.FC<IdeasTabProps> = ({ state, onUpdateState, onShow
           <button
             key={val}
             onClick={() => setSelectedCategory(val)}
+            aria-pressed={selectedCategory === val}
             className={`shrink-0 px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
               selectedCategory === val
                 ? 'bg-purple-900 text-white shadow-xs'
-                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
             }`}
           >
             {lbl}
@@ -187,14 +179,16 @@ export const IdeasTab: React.FC<IdeasTabProps> = ({ state, onUpdateState, onShow
                   className={`p-2 rounded-xl transition-colors cursor-pointer ${
                     isSaved
                       ? 'bg-purple-900 text-amber-300'
-                      : 'bg-slate-100 text-slate-400 hover:text-purple-900 hover:bg-purple-50'
+                      : 'bg-slate-100 text-slate-500 hover:text-purple-900 hover:bg-purple-50'
                   }`}
                   title={isSaved ? 'Saved in Plan' : 'Save to Plan'}
+                  aria-pressed={isSaved}
+                  aria-label={`${isSaved ? 'Remove from plan' : 'Save to plan'}: ${idea.title}`}
                 >
                   {isSaved ? (
-                    <BookmarkCheck className="w-5 h-5" />
+                    <BookmarkCheck className="w-5 h-5" aria-hidden="true" />
                   ) : (
-                    <Bookmark className="w-5 h-5" />
+                    <Bookmark className="w-5 h-5" aria-hidden="true" />
                   )}
                 </button>
               </div>
@@ -214,7 +208,7 @@ export const IdeasTab: React.FC<IdeasTabProps> = ({ state, onUpdateState, onShow
               {/* Requirements Checklist */}
               {idea.requirements && idea.requirements.length > 0 && (
                 <div className="space-y-1 pt-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">
                     Execution Requirements
                   </span>
                   <ul className="list-disc list-inside text-xs text-slate-600 space-y-0.5">
@@ -231,7 +225,7 @@ export const IdeasTab: React.FC<IdeasTabProps> = ({ state, onUpdateState, onShow
                   {idea.tags.map((t, idx) => (
                     <span
                       key={idx}
-                      className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-500"
+                      className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600"
                     >
                       #{t}
                     </span>
@@ -242,13 +236,15 @@ export const IdeasTab: React.FC<IdeasTabProps> = ({ state, onUpdateState, onShow
                   {idea.status !== 'rejected' && (
                     <button
                       onClick={() => rejectIdea(idea.id)}
-                      className="text-slate-400 hover:text-rose-600 font-medium"
+                      className="text-slate-500 hover:text-rose-600 font-medium cursor-pointer"
+                      aria-label={`Dismiss idea ${idea.title}`}
                     >
                       Dismiss
                     </button>
                   )}
                   <button
                     onClick={() => toggleSaveIdea(idea.id)}
+                    aria-pressed={isSaved}
                     className={`px-3 py-1 rounded-lg font-bold text-xs transition-colors cursor-pointer ${
                       isSaved
                         ? 'bg-purple-100 text-purple-900 border border-purple-200'
@@ -265,105 +261,107 @@ export const IdeasTab: React.FC<IdeasTabProps> = ({ state, onUpdateState, onShow
       </div>
 
       {/* Add Custom Idea Modal */}
-      {ideaModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <form
-            onSubmit={handleSaveCustomIdea}
-            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95"
-          >
-            <h3 className="text-base font-bold text-slate-900 font-editorial">
-              Add Custom Creative Concept
-            </h3>
+      <ModalShell
+        isOpen={ideaModalOpen}
+        onClose={() => setIdeaModalOpen(false)}
+        title="Add Custom Creative Concept"
+        maxWidthClassName="max-w-md"
+        bodyClassName="p-6"
+      >
+        <form onSubmit={handleSaveCustomIdea} className="space-y-4">
+          <div>
+            <label htmlFor="idea-title" className="block text-xs font-medium text-slate-800 mb-1">Concept Title</label>
+            <input
+              id="idea-title"
+              type="text"
+              required
+              value={iTitle}
+              onChange={(e) => setITitle(e.target.value)}
+              placeholder="e.g. Polaroid Vintage Wishing Tree"
+              className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+            />
+          </div>
 
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Concept Title</label>
-              <input
-                type="text"
-                required
-                value={iTitle}
-                onChange={(e) => setITitle(e.target.value)}
-                placeholder="e.g. Polaroid Vintage Wishing Tree"
-                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Category</label>
-                <select
-                  value={iCategory}
-                  onChange={(e) => setICategory(e.target.value as IdeaCategory)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
-                >
-                  <option value="theme">Theme &amp; Styling</option>
-                  <option value="menu">Menu &amp; Cocktails</option>
-                  <option value="entertainment">Entertainment</option>
-                  <option value="activity">Activity</option>
-                  <option value="gift">Gifts &amp; Favors</option>
-                  <option value="photo_concept">Photo Concept</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">
-                  Budget Impact
-                </label>
-                <select
-                  value={iTier}
-                  onChange={(e) => setITier(e.target.value as IdeaCostTier)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
-                >
-                  <option value="low">$ (Low Impact)</option>
-                  <option value="medium">$$ (Moderate Impact)</option>
-                  <option value="high">$$$ (High Impact)</option>
-                  <option value="luxury">$$$$ (Luxury Element)</option>
-                </select>
-              </div>
+              <label htmlFor="idea-category" className="block text-xs font-medium text-slate-800 mb-1">Category</label>
+              <select
+                id="idea-category"
+                value={iCategory}
+                onChange={(e) => setICategory(e.target.value as IdeaCategory)}
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
+              >
+                <option value="theme">Theme &amp; Styling</option>
+                <option value="menu">Menu &amp; Cocktails</option>
+                <option value="entertainment">Entertainment</option>
+                <option value="activity">Activity</option>
+                <option value="gift">Gifts &amp; Favors</option>
+                <option value="photo_concept">Photo Concept</option>
+              </select>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Description</label>
-              <textarea
-                rows={2}
-                required
-                value={iDesc}
-                onChange={(e) => setIDesc(e.target.value)}
-                placeholder="Describe the experience..."
-                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
-                Execution Requirements (One per line)
+              <label htmlFor="idea-tier" className="block text-xs font-medium text-slate-800 mb-1">
+                Budget Impact
               </label>
-              <textarea
-                rows={2}
-                value={iRequirements}
-                onChange={(e) => setIRequirements(e.target.value)}
-                placeholder="2 Instax cameras&#10;Wooden tree structure&#10;Metallic ink pens"
-                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-              />
+              <select
+                id="idea-tier"
+                value={iTier}
+                onChange={(e) => setITier(e.target.value as IdeaCostTier)}
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
+              >
+                <option value="low">$ (Low Impact)</option>
+                <option value="medium">$$ (Moderate Impact)</option>
+                <option value="high">$$$ (High Impact)</option>
+                <option value="luxury">$$$$ (Luxury Element)</option>
+              </select>
             </div>
+          </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => setIdeaModalOpen(false)}
-                className="text-xs px-3 py-1.5 text-slate-600 hover:text-slate-900"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-purple-900 text-white rounded-lg text-xs font-bold hover:bg-purple-950 transition-colors cursor-pointer"
-              >
-                Save Concept
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+          <div>
+            <label htmlFor="idea-description" className="block text-xs font-medium text-slate-800 mb-1">Description</label>
+            <textarea
+              id="idea-description"
+              rows={2}
+              required
+              value={iDesc}
+              onChange={(e) => setIDesc(e.target.value)}
+              placeholder="Describe the experience..."
+              className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="idea-requirements" className="block text-xs font-medium text-slate-800 mb-1">
+              Execution Requirements (One per line)
+            </label>
+            <textarea
+              id="idea-requirements"
+              rows={2}
+              value={iRequirements}
+              onChange={(e) => setIRequirements(e.target.value)}
+              placeholder="2 Instax cameras&#10;Wooden tree structure&#10;Metallic ink pens"
+              className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={() => setIdeaModalOpen(false)}
+              className="text-xs px-3 py-1.5 text-slate-600 hover:text-slate-900 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-purple-900 text-white rounded-lg text-xs font-bold hover:bg-purple-950 transition-colors cursor-pointer"
+            >
+              Save Concept
+            </button>
+          </div>
+        </form>
+      </ModalShell>
     </div>
   );
 };

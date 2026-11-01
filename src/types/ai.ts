@@ -14,13 +14,31 @@ export interface RiskItem {
   mitigation: string;
 }
 
+/**
+ * Payload attached to a proposed change. Kept to a small, closed set so that
+ * untrusted model output can be validated structurally before it is ever
+ * applied to the event state:
+ * - `budget` proposals carry a plain object of allocation keys -> numbers.
+ * - `guest` proposals carry the new headcount as a number.
+ * - Everything else is informational strings/numbers.
+ */
+export type ProposalPayload = number | string | Record<string, number>;
+
+/** Keys that a live AI is allowed to set inside a budget proposal. */
+export type BudgetAllocationKey = 'decorAllocated' | 'cateringAllocated' | 'photoAllocated';
+
 export interface ProposedChange {
   id: string;
   section: 'budget' | 'guest' | 'timeline' | 'task' | 'schedule' | 'vendor' | 'details';
   title: string;
   description: string;
-  beforeValue?: any;
-  afterValue: any;
+  beforeValue?: ProposalPayload;
+  /**
+   * Optional to match reality: AI payloads and hand-crafted proposals may omit
+   * the delta. The apply engine (proposals.ts) already rejects changes whose
+   * afterValue is unusable, so an absent delta never enters state.
+   */
+  afterValue?: ProposalPayload;
   applied: boolean;
   timestamp: string;
 }

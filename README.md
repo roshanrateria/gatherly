@@ -142,12 +142,15 @@ graph TD
 
 ## 5. Technology Stack
 
-- **Framework:** React 19 + TypeScript + Vite
+- **Framework:** React 19 + TypeScript 5.9 + Vite 7 (strict `tsc -b` project graph; `npm run build` must pass)
 - **Styling:** Tailwind CSS v4 (Editorial elegance palette: warm alabaster, charcoal navy, royal plum, terracotta coral, champagne gold)
 - **Icons:** Lucide React
-- **Testing:** Node.js native test runner via `npx tsx --test`
-- **Persistence:** LocalStorage persistence service with JSON backup/restore
+- **Testing:**
+  - **Unit:** Node.js native test runner via `npx tsx --test` — 62 tests across 8 files (budget math, overrun detection, timeline offsets, schedule conflicts, natural-language parsing, CSV safety, AI-response sanitization, proposal engine, storage guards, offline planner)
+  - **E2E:** Playwright (`channel: 'msedge'`, no browser download required) — 15 real-world scenarios × 2 viewports (desktop 1280×800 + Pixel 7), covering brief-driven wedding creation, hostile-input clamping, the proposal apply engine, budget/guest/vendor CRUD, multi-day reschedule, refresh persistence, offline mode, and accessibility smoke checks
+- **Persistence:** LocalStorage persistence service with schema-guarded parsing and JSON backup/restore
 - **Calendar:** RFC 5545 compliant iCalendar (.ics) generation
+- **Quality gates:** `npx eslint .` (0 problems), `npx tsc --noEmit`, production bundle verified (React runtime in a cache-stable separate chunk)
 
 ---
 
@@ -175,20 +178,47 @@ cp .env.example .env
 npm run dev
 ```
 
-### Running the Automated Test Suite
+### Running the Automated Test Suites
 ```bash
-npm test
+npm test                       # 62 unit tests (Node native runner)
+npx playwright test            # 30 E2E tests (15 scenarios × desktop + mobile Pixel 7)
+npx playwright test --project=desktop   # desktop-only sweep
 ```
-Executes all 16 domain unit tests covering budget math, overrun detection, timeline offsets, schedule conflict engines, natural language parsing, and offline planner decision rules.
+Unit tests cover budget math, overrun detection, timeline offsets, schedule conflict engines, natural-language parsing, CSV import/export safety (RFC 4180 + formula-injection defense), AI-response sanitization, the proposal-apply engine, storage guards, and offline-planner decision rules.
+
+E2E tests drive the real app in a headless Edge window: the dev server starts automatically, state is seeded through the product's own Settings → sample-preset flow, and every scenario runs on both desktop and mobile viewports.
+
+### Static Checks
+```bash
+npx eslint .          # 0 problems
+npx tsc --noEmit      # solution graph
+npm run build         # strict tsc -b + vite production build
+```
 
 ### Production Build
 ```bash
 npm run build
 ```
+Output lands in `dist/` (~332 kB app chunk + 12 kB React runtime chunk, gzipped ~1/3 of that).
 
 ---
 
-## 7. Assumptions & Limitations
+## 7. Deployment
+
+Gatherly is a static single-page app — it deploys anywhere static hosting exists. On **Vercel**, zero configuration is required (auto-detected Vite preset):
+
+- **Build command:** `npm run build`
+- **Output directory:** `dist`
+- The bundled `vercel.json` adds a single SPA rewrite (`/.* → /index.html`) so deep links and refreshes always resolve.
+
+Deploy from the CLI:
+```bash
+npx vercel deploy --prod
+```
+
+All AI features are BYOK and client-side only: no server code exists, and user API keys never leave the browser.
+
+## 8. Assumptions & Limitations
 
 1. **Vendor Actions:** Gatherly acts as an orchestration tool and procurement manager; it does not execute financial transactions or initiate binding legal contracts on third-party vendor platforms.
 2. **Offline Determinism:** The offline rule-based planner is powered by deterministic heuristics and domain constraint algorithms. Live LLM mode requires user-supplied API credentials.

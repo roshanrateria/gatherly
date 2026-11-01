@@ -1,20 +1,15 @@
 import React, { useState } from 'react';
 import {
-  Settings,
   ShieldCheck,
   Cpu,
-  Key,
   Database,
   Download,
   Upload,
-  RefreshCw,
   AlertTriangle,
-  Lock,
   Eye,
   EyeOff,
-  Check,
-  Info,
   DollarSign,
+  Trash2,
 } from 'lucide-react';
 import { AppState, AIConfig, AIProviderType } from '../../types/index';
 import { CurrencyCode, CURRENCY_CONFIGS } from '../../types/currency';
@@ -89,10 +84,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
+    reader.onload = (ev) => {
+      const content = typeof ev.target?.result === 'string' ? ev.target.result : '';
       const result = validateAndImportState(content);
-      if (result.success && result.state) {
+      if (result.success) {
         onUpdateState(result.state);
         onShowToast('success', 'Backup Restored Successfully', result.state.event.title);
       } else {
@@ -101,6 +96,22 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
     };
     reader.readAsText(file);
     e.target.value = '';
+  };
+
+  /** Erases every piece of app data from localStorage; the reload returns the app to first-run state. */
+  const handleEraseAllData = () => {
+    if (!window.confirm('Erase ALL locally stored Gatherly data (event, budget, guests, tasks, AI keys)?')) {
+      return;
+    }
+    if (!window.confirm('This cannot be undone without a backup file. Erase everything?')) {
+      return;
+    }
+    clearAllStoredData();
+    onShowToast(
+      'warning',
+      'Local Data Erased',
+      'Press Export Complete Backup before erasing if you need a copy. Reload the page to start fresh.'
+    );
   };
 
   const handleResetPreset = (preset: 'wedding' | 'corporate' | 'birthday') => {
@@ -134,7 +145,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-purple-900 text-amber-300 flex items-center justify-center">
-              <Cpu className="w-5 h-5" />
+              <Cpu className="w-5 h-5" aria-hidden="true" />
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900 font-editorial">
@@ -173,7 +184,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
           >
             <div className="flex items-center justify-between">
               <span className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                <ShieldCheck className="w-4 h-4 text-emerald-600" aria-hidden="true" />
                 Offline Expert System
               </span>
               <span className="text-[10px] font-bold px-2 py-0.2 rounded bg-emerald-200 text-emerald-950 uppercase">
@@ -200,7 +211,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
           >
             <div className="flex items-center justify-between">
               <span className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                <Cpu className="w-4 h-4 text-purple-700" />
+                <Cpu className="w-4 h-4 text-purple-700" aria-hidden="true" />
                 Live LLM Provider (BYOK)
               </span>
               <span className="text-[10px] font-bold px-2 py-0.2 rounded bg-purple-200 text-purple-950 uppercase">
@@ -219,8 +230,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
           <div className="p-4 rounded-xl border border-purple-200 bg-purple-50/40 space-y-4 text-xs animate-in fade-in">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Provider</label>
+                <label htmlFor="settings-provider" className="block text-xs font-semibold text-slate-800 mb-1">Provider</label>
                 <select
+                  id="settings-provider"
                   value={provider}
                   onChange={(e) => {
                     const p = e.target.value as AIProviderType;
@@ -240,10 +252,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                <label htmlFor="settings-model" className="block text-xs font-semibold text-slate-800 mb-1">
                   Model Identifier
                 </label>
                 <input
+                  id="settings-model"
                   type="text"
                   required
                   value={model}
@@ -255,11 +268,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label htmlFor="settings-api-key" className="block text-xs font-semibold text-slate-800 mb-1">
                 API Key (Stored locally in browser localStorage, never sent to external servers)
               </label>
               <div className="relative">
                 <input
+                  id="settings-api-key"
                   type={showKey ? 'text' : 'password'}
                   required
                   value={apiKey}
@@ -270,18 +284,21 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
                 <button
                   type="button"
                   onClick={() => setShowKey(!showKey)}
-                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-700"
+                  className="absolute right-2.5 top-2.5 text-slate-500 hover:text-slate-800 cursor-pointer"
+                  aria-pressed={showKey}
+                  aria-label={showKey ? 'Hide API key' : 'Show API key'}
                 >
-                  {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showKey ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
                 </button>
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label htmlFor="settings-base-url" className="block text-xs font-semibold text-slate-800 mb-1">
                 Custom Base URL (Optional, for proxies or enterprise gateways)
               </label>
               <input
+                id="settings-base-url"
                 type="text"
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
@@ -293,7 +310,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
             {/* Mandatory External Data Disclosure Requirement */}
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-950 space-y-2">
               <div className="flex items-center gap-2 font-bold">
-                <AlertTriangle className="w-4 h-4 text-amber-600" />
+                <AlertTriangle className="w-4 h-4 text-amber-600" aria-hidden="true" />
                 <span>External AI Data Sharing Disclosure</span>
               </div>
               <p className="text-xs leading-relaxed text-slate-700">
@@ -333,7 +350,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
       >
         <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
           <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-900 flex items-center justify-center">
-            <DollarSign className="w-5 h-5" />
+            <DollarSign className="w-5 h-5" aria-hidden="true" />
           </div>
           <div>
             <h3 className="text-base font-bold text-slate-900 font-editorial">
@@ -348,10 +365,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <label htmlFor="settings-currency" className="block text-xs font-semibold text-slate-800 mb-1">
               Active Currency
             </label>
             <select
+              id="settings-currency"
               value={currency}
               onChange={(e) => {
                 const c = e.target.value as CurrencyCode;
@@ -369,12 +387,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <label htmlFor="settings-number-format" className="block text-xs font-semibold text-slate-800 mb-1">
               Number Notation Format
             </label>
             <select
+              id="settings-number-format"
               value={numberFormat}
-              onChange={(e) => setNumberFormat(e.target.value as any)}
+              onChange={(e) => setNumberFormat(e.target.value as 'lakhs' | 'international')}
               className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
             >
               <option value="lakhs">Indian System (e.g. ₹45.00 L, ₹1.50 Cr)</option>
@@ -397,7 +416,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs space-y-4">
         <div className="flex items-center gap-2.5 pb-3 border-b border-slate-100">
           <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-900 flex items-center justify-center">
-            <Database className="w-5 h-5" />
+            <Database className="w-5 h-5" aria-hidden="true" />
           </div>
           <div>
             <h3 className="text-base font-bold text-slate-900 font-editorial">
@@ -415,12 +434,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
             onClick={handleExportBackup}
             className="flex items-center gap-2 px-4 py-2 bg-purple-900 hover:bg-purple-950 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs"
           >
-            <Download className="w-4 h-4 text-amber-300" />
+            <Download className="w-4 h-4 text-amber-300" aria-hidden="true" />
             <span>Export Complete Backup (.JSON)</span>
           </button>
 
           <label className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs">
-            <Upload className="w-4 h-4 text-purple-700" />
+            <Upload className="w-4 h-4 text-purple-700" aria-hidden="true" />
             <span>Restore from Backup File</span>
             <input
               type="file"
@@ -433,29 +452,47 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ state, onUpdateState, 
 
         {/* Reset to Pre-built Sample Events */}
         <div className="pt-3 border-t border-slate-100 space-y-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500 block">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-600 block">
             Reset to Sample Events
           </span>
           <div className="flex flex-wrap gap-2 text-xs">
             <button
               onClick={() => handleResetPreset('wedding')}
-              className="px-3 py-1.5 rounded-lg bg-[#FAF8F5] border border-slate-200 hover:border-purple-300 text-slate-800 font-medium transition-colors"
+              className="px-3 py-1.5 rounded-lg bg-[#FAF8F5] border border-slate-200 hover:border-purple-300 text-slate-800 font-medium transition-colors cursor-pointer"
             >
               Udaipur Royal Wedding (3-Day, ₹45 L)
             </button>
             <button
               onClick={() => handleResetPreset('corporate')}
-              className="px-3 py-1.5 rounded-lg bg-[#FAF8F5] border border-slate-200 hover:border-purple-300 text-slate-800 font-medium transition-colors"
+              className="px-3 py-1.5 rounded-lg bg-[#FAF8F5] border border-slate-200 hover:border-purple-300 text-slate-800 font-medium transition-colors cursor-pointer"
             >
               Tech Leadership Summit (350 Pax, ₹30 L)
             </button>
             <button
               onClick={() => handleResetPreset('birthday')}
-              className="px-3 py-1.5 rounded-lg bg-[#FAF8F5] border border-slate-200 hover:border-purple-300 text-slate-800 font-medium transition-colors"
+              className="px-3 py-1.5 rounded-lg bg-[#FAF8F5] border border-slate-200 hover:border-purple-300 text-slate-800 font-medium transition-colors cursor-pointer"
             >
               Milestone 40th Birthday (75 Pax, ₹5 L)
             </button>
           </div>
+        </div>
+
+        {/* Danger Zone: Full Data Erasure */}
+        <div className="pt-3 border-t border-slate-100 space-y-2">
+          <span className="text-xs font-bold uppercase tracking-wider text-rose-700 block">
+            Danger Zone
+          </span>
+          <p className="text-xs text-slate-600">
+            Permanently deletes every locally stored record: the event plan, guests, budget,
+            schedule, milestones, AI configuration, and stored API keys.
+          </p>
+          <button
+            onClick={handleEraseAllData}
+            className="flex items-center gap-2 px-4 py-2 border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-800 rounded-xl text-xs font-bold transition-all cursor-pointer"
+          >
+            <Trash2 className="w-4 h-4" aria-hidden="true" />
+            <span>Erase All Local Data</span>
+          </button>
         </div>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { AIConfig, StructuredAIResponse } from '../types/ai';
 import { AppState } from '../types/index';
 import { runOfflinePlanner } from './offlinePlanner';
+import { sanitizeAIResponse } from './aiValidation';
 
 /**
  * Universal Interchangeable AI Service.
@@ -8,6 +9,49 @@ import { runOfflinePlanner } from './offlinePlanner';
  * when configured with valid keys, or cleanly runs in high-precision Offline Mode.
  * Fully discloses external transmission and strictly validates structured JSON outputs.
  */
+
+const REQUEST_TIMEOUT_MS = 30_000;
+
+function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
+/** Ensures the model's JSON is clean even if fenced in markdown code blocks. */
+function stripJsonFences(text: string): string {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
+  return (fenced ? fenced[1] : trimmed).trim();
+}
+
+function parseJsonLoose(text: string): unknown {
+  const cleaned = stripJsonFences(text);
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error('Response did not contain a JSON object');
+  }
+  return JSON.parse(cleaned.slice(start, end + 1));
+}
+
+/** Extracts a human-readable message from an unknown thrown value. */
+export function describeError(err: unknown): string {
+  if (err instanceof DOMException && err.name === 'AbortError') {
+    return 'Request timed out';
+  }
+  if (err instanceof RangeError) return 'Request aborted (timeout)';
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === 'string' && err) return err;
+  return 'Unknown error';
+}
+
+function requireOk(res: Response, providerLabel: string): void {
+  if (!res.ok) {
+    throw new Error(`${providerLabel} error ${res.status}: ${res.statusText}`);
+  }
+}
+
 export async function generateAIPlanResponse(
   userPrompt: string,
   state: AppState,
@@ -60,9 +104,9 @@ STRICT DECISION RULES:
 1. All budget numbers must be realistic and respectful of priorities.
 2. Distinguish explicit requirements (must-haves) from preferences (nice-to-haves).
 3. If guest count increases with fixed budget: calculate per-guest drop, identify pressure points, propose trade-offs (e.g. trim flexible decor or favors to protect catering).
-4. If photography becomes higher priority than decor: propose concrete budget shift to photography.
-5. NEVER claim a vendor is booked, contract signed, or external payment processed unless it actually happened.
-6. Provide proposed_changes with realistic diffs whenever an edit to guests, budget, or timeline is warranted.
+4. If photography becomes higher priority than decor: propose concrete budget shift to photography (afterValue: {"decorAllocated": NewDecorNumber, "photoAllocated": NewPhotoNumber}).
+5. For guest-count changes use afterValue as the plain number of guests.
+6. NEVER claim a vendor is booked, contract signed, or external payment processed unless it actually happened.
 7. Return ONLY valid JSON, no markdown codeblocks, no commentary outside JSON.`;
 
     const eventContext = {
@@ -91,7 +135,7 @@ STRICT DECISION RULES:
 
       const model = config.model || (config.provider === 'groq' ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini');
 
-      const res = await fetch(endpoint, {
+      const res = await fetchWithTimeout(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -108,20 +152,18 @@ STRICT DECISION RULES:
         }),
       });
 
-      if (!res.ok) {
-        throw new Error(`API error ${res.status}: ${res.statusText}`);
-      }
-
-      const data = await res.json();
-      const rawText = data.choices?.[0]?.message?.content;
-      if (rawText) {
-        parsedResponse = JSON.parse(rawText);
+      requireOk(res, 'API');
+      const data: unknown = await res.json();
+      const rawText = (data as { choices?: { message?: { content?: unknown } }[] })
+        ?.choices?.[0]?.message?.content;
+      if (typeof rawText === 'string' && rawText.trim()) {
+        parsedResponse = sanitizeAIResponse(parseJsonLoose(rawText));
       }
     } else if (config.provider === 'anthropic') {
       const endpoint = config.baseUrl || 'https://api.anthropic.com/v1/messages';
       const model = config.model || 'claude-3-5-sonnet-20241022';
 
-      const res = await fetch(endpoint, {
+      const res = await fetchWithTimeout(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -137,55 +179,40 @@ STRICT DECISION RULES:
         }),
       });
 
-      if (!res.ok) {
-        throw new Error(`Anthropic error ${res.status}: ${res.statusText}`);
-      }
-
-      const data = await res.json();
-      const rawText = data.content?.[0]?.text;
-      if (rawText) {
-        // extract json from text if wrapped
-        const clean = rawText.replace(/```json\n?|\n?```/g, '').trim();
-        parsedResponse = JSON.parse(clean);
+      requireOk(res, 'Anthropic');
+      const data: unknown = await res.json();
+      const rawText = (data as { content?: { text?: unknown }[] })?.content?.[0]?.text;
+      if (typeof rawText === 'string' && rawText.trim()) {
+        parsedResponse = sanitizeAIResponse(parseJsonLoose(rawText));
       }
     } else if (config.provider === 'gemini') {
       const model = config.model || 'gemini-1.5-flash';
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${config.apiKey.trim()}`;
+      // The API key travels in a header, never in the URL query string,
+      // so it cannot leak into proxies, logs, or browser history entries.
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
 
-      const res = await fetch(url, {
+      const res = await fetchWithTimeout(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': config.apiKey.trim(),
+        },
         body: JSON.stringify({
           contents: [{ parts: [{ text: `${systemPrompt}\n\n${userMessageContent}` }] }],
           generationConfig: { responseMimeType: 'application/json' },
         }),
       });
 
-      if (!res.ok) {
-        throw new Error(`Gemini error ${res.status}: ${res.statusText}`);
-      }
-
-      const data = await res.json();
-      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (rawText) {
-        parsedResponse = JSON.parse(rawText);
+      requireOk(res, 'Gemini');
+      const data: unknown = await res.json();
+      const rawText = (data as { candidates?: { content?: { parts?: { text?: unknown }[] } }[] })
+        ?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (typeof rawText === 'string' && rawText.trim()) {
+        parsedResponse = sanitizeAIResponse(parseJsonLoose(rawText));
       }
     }
 
-    // Validate structured response has necessary fields
-    if (
-      parsedResponse &&
-      typeof parsedResponse.message === 'string' &&
-      Array.isArray(parsedResponse.recommendations)
-    ) {
-      // Ensure missing arrays are initialized
-      parsedResponse.assumptions = parsedResponse.assumptions || [];
-      parsedResponse.clarifying_questions = parsedResponse.clarifying_questions || [];
-      parsedResponse.proposed_changes = parsedResponse.proposed_changes || [];
-      parsedResponse.affected_sections = parsedResponse.affected_sections || [];
-      parsedResponse.risks = parsedResponse.risks || [];
-      parsedResponse.next_steps = parsedResponse.next_steps || [];
-
+    if (parsedResponse) {
       return {
         response: parsedResponse,
         modeUsed: 'live',
@@ -194,11 +221,12 @@ STRICT DECISION RULES:
     }
 
     throw new Error('Malformed AI response schema from provider');
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const detail = describeError(err);
     console.warn('Live AI provider failed or was unreachable, seamlessly falling back to high-precision Offline Mode:', err);
     // Graceful fallback to deterministic offline planner with error notification
     const fallback = runOfflinePlanner(userPrompt, state);
-    fallback.message = `[Offline Mode Active - Live AI was unavailable: ${err?.message || 'Check key & connection'}]\n\n${fallback.message}`;
+    fallback.message = `[Offline Mode Active - Live AI was unavailable: ${detail}]\n\n${fallback.message}`;
     return {
       response: fallback,
       modeUsed: 'offline',

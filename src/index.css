@@ -35,6 +35,27 @@ body {
   background: #A99FB0;
 }
 
+/* Accessibility: keep a strong visible focus outline for keyboard users.
+   Tailwind rings already exist on most controls; this guarantees a baseline
+   everywhere (including plain buttons that use outline-hidden). */
+:focus-visible {
+  outline: 2px solid #6d28d9;
+  outline-offset: 2px;
+}
+
+/* Accessibility: honor the OS "reduce motion" preference by collapsing
+   non-essential animation and transition durations. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Print styling for run-sheet and budget reports */
 @media print {
   body {

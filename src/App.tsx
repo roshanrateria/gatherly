@@ -1,21 +1,46 @@
-import React, { useState, useEffect } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { AppState, ProposedChange } from './types/index';
 import { loadStoredState, saveStateToStorage } from './lib/storage';
 import { createSampleWedding, createSampleCorporate, createSampleBirthday } from './lib/sampleEvents';
+import { applyProposalsToState } from './lib/proposals';
+import { createId } from './lib/createId';
 import { Navbar, ActiveTab } from './components/Navbar';
-import { OverviewTab } from './components/overview/OverviewTab';
-import { AIPlannerTab } from './components/planner/AIPlannerTab';
-import { BudgetTab } from './components/budget/BudgetTab';
-import { TimelineTab } from './components/timeline/TimelineTab';
-import { TasksTab } from './components/tasks/TasksTab';
-import { VendorsTab } from './components/vendors/VendorsTab';
-import { GuestsTab } from './components/guests/GuestsTab';
-import { ScheduleTab } from './components/schedule/ScheduleTab';
-import { IdeasTab } from './components/ideas/IdeasTab';
-import { SettingsTab } from './components/settings/SettingsTab';
 import { AdaptiveSetupModal } from './components/AdaptiveSetupModal';
 import { ProposalReviewModal } from './components/ProposalReviewModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
+
+/**
+ * Tabs are code-split so the initial bundle stays lean; each tab is its own
+ * chunk that loads on first navigation.
+ */
+const OverviewTab = lazy(() =>
+  import('./components/overview/OverviewTab').then(m => ({ default: m.OverviewTab })));
+const AIPlannerTab = lazy(() =>
+  import('./components/planner/AIPlannerTab').then(m => ({ default: m.AIPlannerTab })));
+const BudgetTab = lazy(() =>
+  import('./components/budget/BudgetTab').then(m => ({ default: m.BudgetTab })));
+const TimelineTab = lazy(() =>
+  import('./components/timeline/TimelineTab').then(m => ({ default: m.TimelineTab })));
+const TasksTab = lazy(() =>
+  import('./components/tasks/TasksTab').then(m => ({ default: m.TasksTab })));
+const VendorsTab = lazy(() =>
+  import('./components/vendors/VendorsTab').then(m => ({ default: m.VendorsTab })));
+const GuestsTab = lazy(() =>
+  import('./components/guests/GuestsTab').then(m => ({ default: m.GuestsTab })));
+const ScheduleTab = lazy(() =>
+  import('./components/schedule/ScheduleTab').then(m => ({ default: m.ScheduleTab })));
+const IdeasTab = lazy(() =>
+  import('./components/ideas/IdeasTab').then(m => ({ default: m.IdeasTab })));
+const SettingsTab = lazy(() =>
+  import('./components/settings/SettingsTab').then(m => ({ default: m.SettingsTab })));
+
+function TabFallback() {
+  return (
+    <div className="py-24 text-center text-slate-500" role="status">
+      <p>Loading workspace…</p>
+    </div>
+  );
+}
 
 export function App() {
   const [state, setState] = useState<AppState>(() => loadStoredState());
@@ -29,7 +54,7 @@ export function App() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const addToast = (type: 'success' | 'warning' | 'error' | 'info', title: string, message?: string) => {
-    const id = `toast_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const id = createId('toast');
     setToasts((prev) => [...prev, { id, type, title, message }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -59,81 +84,36 @@ export function App() {
   // Unapplied Proposals Count
   const pendingProposals = (state.proposalsHistory || []).filter((p) => !p.applied);
 
-  // Proposal Application Engine
-  const applySingleProposal = (proposalId: string) => {
-    const proposal = (state.proposalsHistory || []).find((p) => p.id === proposalId);
-    if (!proposal) return;
+  /**
+   * Single proposal application entry point used for both one-off applies and
+   * "apply everything". The whole batch is applied as one transaction through
+   * the shared proposal engine, so no proposal ever reads stale state (the
+   * previous implementation mutated via repeated setState calls based on the
+   * same captured snapshot — only the last proposal survived).
+   */
+  const applyProposalsByIds = (proposalIds: string[]) => {
+    const targets = (state.proposalsHistory || []).filter((p) => proposalIds.includes(p.id));
+    if (targets.length === 0) return;
 
-    let newState = { ...state };
+    const result = applyProposalsToState(state, targets);
+    const appliedIds = new Set(result.applied.map((p) => p.id));
 
-    if (proposal.section === 'guest') {
-      const newGuestCount = Number(proposal.afterValue);
-      if (!isNaN(newGuestCount) && newGuestCount > 0) {
-        newState = {
-          ...newState,
-          event: {
-            ...newState.event,
-            guests: {
-              ...newState.event.guests,
-              count: newGuestCount,
-              expectedAttendance: Math.round(newGuestCount * 0.95),
-            },
-            updatedAt: new Date().toISOString(),
-          },
-        };
-      }
-    } else if (proposal.section === 'budget') {
-      if (typeof proposal.afterValue === 'object') {
-        const decorDiff = proposal.afterValue.decorAllocated;
-        const cateringDiff = proposal.afterValue.cateringAllocated;
-        const photoDiff = proposal.afterValue.photoAllocated;
+    const stampTimestamp = (proposal: ProposedChange): ProposedChange => {
+      if (!appliedIds.has(proposal.id)) return proposal;
+      const appliedAt = result.applied.find((p) => p.id === proposal.id)?.timestamp;
+      return { ...proposal, applied: true, ...(appliedAt ? { timestamp: appliedAt } : {}) };
+    };
 
-        const updatedCategories = newState.categories.map((cat) => {
-          if (decorDiff !== undefined && (cat.name.toLowerCase().includes('decor') || cat.name.toLowerCase().includes('floral'))) {
-            return {
-              ...cat,
-              allocatedAmount: decorDiff,
-              allocationPercent: Math.round((decorDiff / newState.event.budget.total) * 100),
-            };
-          }
-          if (cateringDiff !== undefined && (cat.name.toLowerCase().includes('cater') || cat.name.toLowerCase().includes('food'))) {
-            return {
-              ...cat,
-              allocatedAmount: cateringDiff,
-              allocationPercent: Math.round((cateringDiff / newState.event.budget.total) * 100),
-            };
-          }
-          if (photoDiff !== undefined && cat.name.toLowerCase().includes('photo')) {
-            return {
-              ...cat,
-              allocatedAmount: photoDiff,
-              allocationPercent: Math.round((photoDiff / newState.event.budget.total) * 100),
-            };
-          }
-          return cat;
-        });
-
-        newState = {
-          ...newState,
-          categories: updatedCategories,
-          event: { ...newState.event, updatedAt: new Date().toISOString() },
-        };
-      }
-    }
-
-    // Mark proposal as applied
-    const updatedProposals = (newState.proposalsHistory || []).map((p) =>
-      p.id === proposalId ? { ...p, applied: true } : p
-    );
-
-    const updatedChatHistory = newState.chatHistory.map((msg) => {
+    const chatAppliedIds = new Set(result.applied.map((p) => p.id));
+    const updatedProposalsHistory = (result.state.proposalsHistory || []).map(stampTimestamp);
+    const updatedChatHistory = (result.state.chatHistory || []).map((msg) => {
       if (msg.structuredResponse?.proposed_changes) {
         return {
           ...msg,
           structuredResponse: {
             ...msg.structuredResponse,
             proposed_changes: msg.structuredResponse.proposed_changes.map((p) =>
-              p.id === proposalId ? { ...p, applied: true } : p
+              chatAppliedIds.has(p.id) ? { ...p, applied: true } : p
             ),
           },
         };
@@ -142,16 +122,33 @@ export function App() {
     });
 
     handleUpdateState({
-      ...newState,
-      proposalsHistory: updatedProposals,
+      ...result.state,
+      proposalsHistory: updatedProposalsHistory,
       chatHistory: updatedChatHistory,
     });
 
-    addToast('success', 'Proposal Applied to Master Plan', proposal.title);
+    const appliedTitles = result.applied.map((p) => p.title);
+    if (appliedTitles.length > 0) {
+      addToast(
+        'success',
+        appliedTitles.length === 1
+          ? 'Proposal Applied to Master Plan'
+          : `${appliedTitles.length} Proposals Applied`,
+        appliedTitles.length === 1 ? appliedTitles[0] : appliedTitles.slice(0, 3).join(' • ')
+      );
+    }
+    const firstSkip = result.skipped[0];
+    if (firstSkip) {
+      addToast('warning', 'Some changes were skipped', skipSummary(result.skipped));
+    }
+  };
+
+  const applySingleProposal = (proposalId: string) => {
+    applyProposalsByIds([proposalId]);
   };
 
   const applyAllProposals = () => {
-    pendingProposals.forEach((p) => applySingleProposal(p.id));
+    applyProposalsByIds(pendingProposals.map((p) => p.id));
     setProposalModalOpen(false);
   };
 
@@ -166,6 +163,14 @@ export function App() {
       {/* Toast Notification Container */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
+      {/* Skip link for keyboard users */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:rounded-md focus:bg-purple-900 focus:px-4 focus:py-2 focus:text-white"
+      >
+        Skip to main content
+      </a>
+
       {/* Global Navigation Header */}
       <Navbar
         state={state}
@@ -177,87 +182,89 @@ export function App() {
       />
 
       {/* Main Workspace Body */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {activeTab === 'overview' && (
-          <OverviewTab
-            state={state}
-            onNavigateTab={setActiveTab}
-            onOpenProposalModal={() => setProposalModalOpen(true)}
-            unappliedProposalsCount={pendingProposals.length}
-          />
-        )}
+      <main id="main-content" className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <Suspense fallback={<TabFallback />}>
+          {activeTab === 'overview' && (
+            <OverviewTab
+              state={state}
+              onNavigateTab={setActiveTab}
+              onOpenProposalModal={() => setProposalModalOpen(true)}
+              unappliedProposalsCount={pendingProposals.length}
+            />
+          )}
 
-        {activeTab === 'planner' && (
-          <AIPlannerTab
-            state={state}
-            onUpdateState={handleUpdateState}
-            onShowToast={addToast}
-          />
-        )}
+          {activeTab === 'planner' && (
+            <AIPlannerTab
+              state={state}
+              onUpdateState={handleUpdateState}
+              onShowToast={addToast}
+            />
+          )}
 
-        {activeTab === 'budget' && (
-          <BudgetTab
-            state={state}
-            onUpdateState={handleUpdateState}
-            onShowToast={addToast}
-          />
-        )}
+          {activeTab === 'budget' && (
+            <BudgetTab
+              state={state}
+              onUpdateState={handleUpdateState}
+              onShowToast={addToast}
+            />
+          )}
 
-        {activeTab === 'timeline' && (
-          <TimelineTab
-            state={state}
-            onUpdateState={handleUpdateState}
-            onShowToast={addToast}
-          />
-        )}
+          {activeTab === 'timeline' && (
+            <TimelineTab
+              state={state}
+              onUpdateState={handleUpdateState}
+              onShowToast={addToast}
+            />
+          )}
 
-        {activeTab === 'tasks' && (
-          <TasksTab
-            state={state}
-            onUpdateState={handleUpdateState}
-            onShowToast={addToast}
-          />
-        )}
+          {activeTab === 'tasks' && (
+            <TasksTab
+              state={state}
+              onUpdateState={handleUpdateState}
+              onShowToast={addToast}
+            />
+          )}
 
-        {activeTab === 'vendors' && (
-          <VendorsTab
-            state={state}
-            onUpdateState={handleUpdateState}
-            onShowToast={addToast}
-          />
-        )}
+          {activeTab === 'vendors' && (
+            <VendorsTab
+              state={state}
+              onUpdateState={handleUpdateState}
+              onShowToast={addToast}
+            />
+          )}
 
-        {activeTab === 'guests' && (
-          <GuestsTab
-            state={state}
-            onUpdateState={handleUpdateState}
-            onShowToast={addToast}
-          />
-        )}
+          {activeTab === 'guests' && (
+            <GuestsTab
+              state={state}
+              onUpdateState={handleUpdateState}
+              onShowToast={addToast}
+            />
+          )}
 
-        {activeTab === 'schedule' && (
-          <ScheduleTab
-            state={state}
-            onUpdateState={handleUpdateState}
-            onShowToast={addToast}
-          />
-        )}
+          {activeTab === 'schedule' && (
+            <ScheduleTab
+              state={state}
+              onUpdateState={handleUpdateState}
+              onShowToast={addToast}
+            />
+          )}
 
-        {activeTab === 'ideas' && (
-          <IdeasTab
-            state={state}
-            onUpdateState={handleUpdateState}
-            onShowToast={addToast}
-          />
-        )}
+          {activeTab === 'ideas' && (
+            <IdeasTab
+              state={state}
+              onUpdateState={handleUpdateState}
+              onShowToast={addToast}
+            />
+          )}
 
-        {activeTab === 'settings' && (
-          <SettingsTab
-            state={state}
-            onUpdateState={handleUpdateState}
-            onShowToast={addToast}
-          />
-        )}
+          {activeTab === 'settings' && (
+            <SettingsTab
+              state={state}
+              onUpdateState={handleUpdateState}
+              onShowToast={addToast}
+            />
+          )}
+        </Suspense>
       </main>
 
       {/* Adaptive Setup Modal (Natural language brief + Guided Wizard) */}
@@ -283,6 +290,14 @@ export function App() {
       />
     </div>
   );
+}
+
+/** Skips display: mention first two, then the remainder count. */
+function skipSummary(skipped: Array<{ title: string; reason: string }>): string {
+  if (skipped.length === 1) return `${skipped[0].title}: ${skipped[0].reason}`;
+  const shown = skipped.slice(0, 2);
+  const rest = skipped.length - shown.length;
+  return `${shown.map(s => s.title).join(' • ')}${rest > 0 ? ` (+${rest} more)` : ''}`;
 }
 
 export default App;

@@ -12,7 +12,7 @@ export function createSampleWedding(): AppState {
   const totalBudget = 4500000; // 45 Lakhs INR
 
   const categories = generateDefaultCategoriesForEvent('wedding', totalBudget, ['Food & Catering', 'Photography']);
-  const { milestones, tasks } = generateMilestonesForEvent('wedding', startDate, guestCount, durationDays);
+  const { milestones, tasks } = generateMilestonesForEvent('wedding', startDate);
   const schedule = generateDefaultSchedule('wedding', startDate, durationDays);
   const ideas = getDefaultIdeasForEvent('wedding');
 
@@ -296,7 +296,7 @@ export function createSampleCorporate(): AppState {
   const totalBudget = 3000000; // 30 Lakhs INR
 
   const categories = generateDefaultCategoriesForEvent('corporate', totalBudget, ['Venue & AV', 'Catering']);
-  const { milestones, tasks } = generateMilestonesForEvent('corporate', startDate, guestCount, durationDays);
+  const { milestones, tasks } = generateMilestonesForEvent('corporate', startDate);
   const schedule = generateDefaultSchedule('corporate', startDate, durationDays);
   const ideas = getDefaultIdeasForEvent('corporate');
 
@@ -364,7 +364,7 @@ export function createSampleBirthday(): AppState {
   const totalBudget = 500000; // 5 Lakhs INR
 
   const categories = generateDefaultCategoriesForEvent('birthday', totalBudget, ['Food & Cake', 'Entertainment']);
-  const { milestones, tasks } = generateMilestonesForEvent('birthday', startDate, guestCount, durationDays);
+  const { milestones, tasks } = generateMilestonesForEvent('birthday', startDate);
   const schedule = generateDefaultSchedule('birthday', startDate, durationDays);
   const ideas = getDefaultIdeasForEvent('birthday');
 

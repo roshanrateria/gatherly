@@ -1,15 +1,10 @@
 import React, { useState } from 'react';
 import {
-  X,
   Sparkles,
   Wand2,
   ListChecks,
-  Calendar,
-  Users,
-  MapPin,
   Check,
   AlertCircle,
-  HelpCircle,
   ArrowRight,
 } from 'lucide-react';
 import { EventType, VenueStatus, EventDetails, AppState } from '../types/index';
@@ -20,6 +15,10 @@ import { generateMilestonesForEvent } from '../lib/deterministicTimeline';
 import { generateDefaultSchedule } from '../lib/deterministicSchedule';
 import { getDefaultIdeasForEvent } from '../lib/creativeIdeas';
 import { formatCurrency } from '../lib/currency';
+import { createId } from '../lib/createId';
+import { addDaysISO } from '../lib/dates';
+import { clampBudgetAmount, clampGuestCount } from '../lib/aiValidation';
+import { ModalShell } from './ui/ModalShell';
 
 interface AdaptiveSetupModalProps {
   isOpen: boolean;
@@ -98,13 +97,10 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
   const handleCreateFromPlan = () => {
     const finalTitle = title.trim() || `${city || 'Destination'} ${eventType.toUpperCase()} Celebration`;
     const finalStartDate = startDate || '2026-11-20';
-
-    const d = new Date(finalStartDate);
-    d.setDate(d.getDate() + (durationDays - 1));
-    const finalEndDate = d.toISOString().split('T')[0];
+    const finalEndDate = addDaysISO(finalStartDate, durationDays - 1);
 
     const finalEvent: EventDetails = {
-      id: `event_${Date.now()}`,
+      id: createId('event'),
       title: finalTitle,
       type: eventType,
       startDate: finalStartDate,
@@ -139,12 +135,7 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
     };
 
     const categories = generateDefaultCategoriesForEvent(eventType, budgetAmount, priorities);
-    const { milestones, tasks } = generateMilestonesForEvent(
-      eventType,
-      finalStartDate,
-      guestCount,
-      durationDays
-    );
+    const { milestones, tasks } = generateMilestonesForEvent(eventType, finalStartDate);
     const schedule = generateDefaultSchedule(eventType, finalStartDate, durationDays);
     const ideas = getDefaultIdeasForEvent(eventType);
 
@@ -176,7 +167,7 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
       ideas,
       chatHistory: [
         {
-          id: `msg_init_${Date.now()}`,
+          id: createId('msg_init'),
           sender: 'assistant',
           timestamp: new Date().toISOString(),
           text: `Welcome to your connected workspace for "${finalTitle}"! I have populated your deterministic budget categories, milestones timeline, 1-click vendor checklists, and multi-day run sheet tailored to ${guestCount} guests in ${city || 'your destination'}. Ask me anytime to adjust constraints or analyze trade-offs.`,
@@ -226,64 +217,90 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-3xl w-full my-8 overflow-hidden transition-all animate-in fade-in zoom-in-95">
-        {/* Modal Header */}
-        <div className="px-6 py-5 bg-gradient-to-r from-purple-900 via-rose-950 to-amber-900 text-white flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center border border-white/20">
-              <Sparkles className="w-5 h-5 text-amber-300" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold font-editorial">Adaptive Event Setup</h2>
-              <p className="text-xs text-purple-200">
-                Natural-language ingestion or step-by-step guided architect
-              </p>
-            </div>
-          </div>
+    <ModalShell
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Adaptive Event Setup"
+      description="Natural-language ingestion or step-by-step guided architect"
+      maxWidthClassName="max-w-3xl"
+      headerClassName="bg-gradient-to-r from-purple-900 via-rose-950 to-amber-900 text-white"
+      /* The setup wizard is the app's tallest form. Without a body max-height
+         the panel overflows the fixed overlay on small viewports, leaving the
+         footer nav buttons unreachable (platform page scroll is locked by
+         the dialog). Keep the ModalShell scroll contract here. */
+      bodyClassName="p-0 max-h-[65vh] overflow-y-auto"
+      footer={
+        <>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 text-white/70 hover:text-white rounded-lg hover:bg-white/10 transition-colors"
+            className="text-xs font-medium text-slate-600 hover:text-slate-900 px-3 py-2 rounded-lg cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            Cancel
           </button>
-        </div>
 
-        {/* Tab Toggle: Natural Language Brief vs Wizard */}
-        <div className="px-6 pt-4 border-b border-slate-200 flex gap-4">
-          <button
-            onClick={() => setMode('brief')}
-            className={`pb-3 px-1 text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors ${
-              mode === 'brief'
-                ? 'border-purple-900 text-purple-900'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <Wand2 className="w-4 h-4" />
-            <span>Natural-Language Brief (Fastest)</span>
-          </button>
-          <button
-            onClick={() => setMode('wizard')}
-            className={`pb-3 px-1 text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors ${
-              mode === 'wizard'
-                ? 'border-purple-900 text-purple-900'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <ListChecks className="w-4 h-4" />
-            <span>Step-by-Step Guided Wizard</span>
-          </button>
-        </div>
+          <div className="flex items-center gap-3">
+            {mode === 'wizard' && step < 4 ? (
+              <button
+                type="button"
+                onClick={() => setStep(step + 1)}
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-slate-800 text-white hover:bg-slate-900 transition-colors cursor-pointer"
+              >
+                <span>Next Step</span>
+                <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleCreateFromPlan}
+                className="flex items-center gap-2 px-5 py-2.5 text-xs font-bold rounded-xl bg-gradient-to-r from-purple-900 to-rose-900 text-white shadow-md hover:from-purple-950 hover:to-rose-950 transition-all cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4 text-amber-300" aria-hidden="true" />
+                <span>Confirm &amp; Build Master Workspace</span>
+              </button>
+            )}
+          </div>
+        </>
+      }
+    >
+      {/* Tab Toggle: Natural Language Brief vs Wizard */}
+      <div className="px-6 pt-4 border-b border-slate-200 flex gap-4" role="group" aria-label="Setup mode">
+        <button
+          onClick={() => setMode('brief')}
+          aria-pressed={mode === 'brief'}
+          className={`pb-3 px-1 text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors cursor-pointer ${
+            mode === 'brief'
+              ? 'border-purple-900 text-purple-900'
+              : 'border-transparent text-slate-600 hover:text-slate-800'
+          }`}
+        >
+          <Wand2 className="w-4 h-4" aria-hidden="true" />
+          <span>Natural-Language Brief (Fastest)</span>
+        </button>
+        <button
+          onClick={() => setMode('wizard')}
+          aria-pressed={mode === 'wizard'}
+          className={`pb-3 px-1 text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors cursor-pointer ${
+            mode === 'wizard'
+              ? 'border-purple-900 text-purple-900'
+              : 'border-transparent text-slate-600 hover:text-slate-800'
+          }`}
+        >
+          <ListChecks className="w-4 h-4" aria-hidden="true" />
+          <span>Step-by-Step Guided Wizard</span>
+        </button>
+      </div>
 
-        {/* Modal Body */}
-        <div className="p-6 max-h-[70vh] overflow-y-auto">
+      {/* Modal Body */}
+      <div className="p-6">
           {mode === 'brief' ? (
             <div className="space-y-5">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                <label htmlFor="setup-brief" className="block text-xs font-bold text-slate-800 uppercase tracking-wider mb-1.5">
                   Paste or Describe Your Event Vision in Plain English
                 </label>
                 <textarea
+                  id="setup-brief"
                   rows={4}
                   value={briefInput}
                   onChange={(e) => handleBriefChange(e.target.value)}
@@ -423,6 +440,7 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
               <div className="flex items-center justify-between pb-3 border-b border-slate-200 text-xs font-semibold">
                 <button
                   type="button"
+                  aria-pressed={step === 1}
                   onClick={() => setStep(1)}
                   className={`px-3 py-1 rounded-md ${
                     step === 1 ? 'bg-purple-900 text-white' : 'text-slate-600 hover:bg-slate-100'
@@ -432,6 +450,7 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
                 </button>
                 <button
                   type="button"
+                  aria-pressed={step === 2}
                   onClick={() => setStep(2)}
                   className={`px-3 py-1 rounded-md ${
                     step === 2 ? 'bg-purple-900 text-white' : 'text-slate-600 hover:bg-slate-100'
@@ -441,6 +460,7 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
                 </button>
                 <button
                   type="button"
+                  aria-pressed={step === 3}
                   onClick={() => setStep(3)}
                   className={`px-3 py-1 rounded-md ${
                     step === 3 ? 'bg-purple-900 text-white' : 'text-slate-600 hover:bg-slate-100'
@@ -450,6 +470,7 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
                 </button>
                 <button
                   type="button"
+                  aria-pressed={step === 4}
                   onClick={() => setStep(4)}
                   className={`px-3 py-1 rounded-md ${
                     step === 4 ? 'bg-purple-900 text-white' : 'text-slate-600 hover:bg-slate-100'
@@ -470,6 +491,7 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
                         <button
                           key={opt.type}
                           type="button"
+                          aria-pressed={eventType === opt.type}
                           onClick={() => setEventType(opt.type)}
                           className={`p-3 text-left rounded-xl border transition-all ${
                             eventType === opt.type
@@ -486,10 +508,11 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="sm:col-span-2">
-                      <label className="block text-xs font-medium text-slate-700 mb-1">
+                      <label htmlFor="setup-title" className="block text-xs font-medium text-slate-800 mb-1">
                         Event Title
                       </label>
                       <input
+                        id="setup-title"
                         type="text"
                         value={title}
                         onChange={(e) => setTitle(e.target.value)}
@@ -498,25 +521,27 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1">
+                      <label htmlFor="setup-duration" className="block text-xs font-medium text-slate-800 mb-1">
                         Duration (Days)
                       </label>
                       <input
+                        id="setup-duration"
                         type="number"
                         min="1"
                         max="14"
                         value={durationDays}
-                        onChange={(e) => setDurationDays(Math.max(1, parseInt(e.target.value) || 1))}
+                        onChange={(e) => setDurationDays(Math.max(1, Math.min(30, parseInt(e.target.value) || 3)))}
                         className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                    <label htmlFor="setup-start-date" className="block text-xs font-medium text-slate-800 mb-1">
                       Event Start Date
                     </label>
                     <input
+                      id="setup-start-date"
                       type="date"
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
@@ -530,10 +555,11 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1">
+                      <label htmlFor="setup-city" className="block text-xs font-medium text-slate-800 mb-1">
                         City / Destination
                       </label>
                       <input
+                        id="setup-city"
                         type="text"
                         value={city}
                         onChange={(e) => setCity(e.target.value)}
@@ -542,15 +568,16 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1">
+                      <label htmlFor="setup-guests" className="block text-xs font-medium text-slate-800 mb-1">
                         Target Guest Count
                       </label>
                       <input
+                        id="setup-guests"
                         type="number"
                         min="5"
                         max="10000"
                         value={guestCount}
-                        onChange={(e) => setGuestCount(Math.max(5, parseInt(e.target.value) || 5))}
+                        onChange={(e) => setGuestCount(Math.max(5, clampGuestCount(parseInt(e.target.value) || 0)))}
                         className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
                       />
                     </div>
@@ -587,10 +614,11 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
 
                   {venueStatus === 'secured' && (
                     <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1">
+                      <label htmlFor="setup-venue-name" className="block text-xs font-medium text-slate-800 mb-1">
                         Secured Venue Name
                       </label>
                       <input
+                        id="setup-venue-name"
                         type="text"
                         value={venueName}
                         onChange={(e) => setVenueName(e.target.value)}
@@ -606,10 +634,11 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1">
+                      <label htmlFor="setup-currency" className="block text-xs font-medium text-slate-800 mb-1">
                         Currency
                       </label>
                       <select
+                        id="setup-currency"
                         value={currency}
                         onChange={(e) => {
                           const c = e.target.value as CurrencyCode;
@@ -627,12 +656,13 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-slate-700 mb-1">
+                      <label htmlFor="setup-number-format" className="block text-xs font-medium text-slate-800 mb-1">
                         Number Format Preference
                       </label>
                       <select
+                        id="setup-number-format"
                         value={numberFormat}
-                        onChange={(e) => setNumberFormat(e.target.value as any)}
+                        onChange={(e) => setNumberFormat(e.target.value as 'lakhs' | 'international')}
                         className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
                       >
                         <option value="lakhs">Indian System (Lakhs &amp; Crores, e.g. ₹45 L)</option>
@@ -644,16 +674,17 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                    <label htmlFor="setup-budget" className="block text-xs font-medium text-slate-800 mb-1">
                       Total Target Budget ({currency})
                     </label>
                     <input
+                      id="setup-budget"
                       type="number"
                       step="10000"
                       min="1000"
                       value={budgetAmount}
                       onChange={(e) =>
-                        setBudgetAmount(Math.max(1000, parseInt(e.target.value) || 0))
+                        setBudgetAmount(Math.max(1000, clampBudgetAmount(parseInt(e.target.value) || 0)))
                       }
                       className="w-full text-sm font-semibold p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
                     />
@@ -673,10 +704,11 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
               {step === 4 && (
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                    <label htmlFor="setup-style" className="block text-xs font-medium text-slate-800 mb-1">
                       Theme / Aesthetic Style
                     </label>
                     <input
+                      id="setup-style"
                       type="text"
                       value={style}
                       onChange={(e) => setStyle(e.target.value)}
@@ -703,6 +735,7 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
                           <button
                             key={item}
                             type="button"
+                            aria-pressed={isSelected}
                             onClick={() => {
                               if (isSelected) {
                                 setPriorities(priorities.filter((p) => p !== item));
@@ -784,41 +817,7 @@ export const AdaptiveSetupModal: React.FC<AdaptiveSetupModalProps> = ({
               )}
             </div>
           )}
-        </div>
-
-        {/* Modal Footer */}
-        <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-xs font-medium text-slate-600 hover:text-slate-900 px-3 py-2 rounded-lg"
-          >
-            Cancel
-          </button>
-
-          <div className="flex items-center gap-3">
-            {mode === 'wizard' && step < 4 ? (
-              <button
-                type="button"
-                onClick={() => setStep(step + 1)}
-                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg bg-slate-800 text-white hover:bg-slate-900 transition-colors"
-              >
-                <span>Next Step</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleCreateFromPlan}
-                className="flex items-center gap-2 px-5 py-2.5 text-xs font-bold rounded-xl bg-gradient-to-r from-purple-900 to-rose-900 text-white shadow-md hover:from-purple-950 hover:to-rose-950 transition-all cursor-pointer"
-              >
-                <Sparkles className="w-4 h-4 text-amber-300" />
-                <span>Confirm &amp; Build Master Workspace</span>
-              </button>
-            )}
-          </div>
-        </div>
       </div>
-    </div>
+    </ModalShell>
   );
 };

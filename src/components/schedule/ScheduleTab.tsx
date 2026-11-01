@@ -9,13 +9,13 @@ import {
   Trash2,
   MapPin,
   User,
-  Sparkles,
-  Layers,
-  CheckCircle2,
 } from 'lucide-react';
 import { AppState, ScheduleItem, ScheduleCategory } from '../../types/index';
 import { detectScheduleConflicts } from '../../lib/deterministicSchedule';
 import { generateScheduleIcs, downloadIcsFile } from '../../lib/icsExport';
+import { createId } from '../../lib/createId';
+import { addDaysISO } from '../../lib/dates';
+import { ModalShell } from '../ui/ModalShell';
 
 interface ScheduleTabProps {
   state: AppState;
@@ -41,9 +41,12 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ state, onUpdateState, 
 
   const conflicts = detectScheduleConflicts(schedule);
 
+  // Guard against a stored selected day outside the current duration.
+  const activeDay = selectedDay >= 1 && selectedDay <= event.durationDays ? selectedDay : 1;
+
   // Filter for selected day
   const dayItems = schedule
-    .filter((item) => item.dayNumber === selectedDay)
+    .filter((item) => item.dayNumber === activeDay)
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
   const dayConflicts = conflicts.filter((c) =>
@@ -64,9 +67,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ state, onUpdateState, 
     const durationMinutes = calculateDurationMins(sStartTime, sEndTime);
 
     // Compute date for this day
-    const d = new Date(event.startDate);
-    d.setDate(d.getDate() + (selectedDay - 1));
-    const itemDate = d.toISOString().split('T')[0];
+    const itemDate = addDaysISO(event.startDate, activeDay - 1);
 
     if (editingItem) {
       const updated = schedule.map((item) =>
@@ -88,8 +89,8 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ state, onUpdateState, 
       onShowToast('success', 'Activity Updated', sTitle);
     } else {
       const newItem: ScheduleItem = {
-        id: `sch_${Date.now()}`,
-        dayNumber: selectedDay,
+        id: createId('sch'),
+        dayNumber: activeDay,
         date: itemDate,
         startTime: sStartTime,
         endTime: sEndTime,
@@ -175,21 +176,20 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ state, onUpdateState, 
       </div>
 
       {/* Multi-Day Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2" role="group" aria-label="Event day selection">
         {Array.from({ length: event.durationDays }).map((_, idx) => {
           const dayNum = idx + 1;
-          const d = new Date(event.startDate);
-          d.setDate(d.getDate() + idx);
-          const dateStr = d.toISOString().split('T')[0];
+          const dateStr = addDaysISO(event.startDate, idx);
 
           return (
             <button
               key={dayNum}
               onClick={() => setSelectedDay(dayNum)}
+              aria-pressed={activeDay === dayNum}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                selectedDay === dayNum
+                activeDay === dayNum
                   ? 'bg-purple-900 text-white shadow-xs'
-                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
               }`}
             >
               Day {dayNum} ({dateStr})
@@ -239,9 +239,9 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ state, onUpdateState, 
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
         {dayItems.length === 0 ? (
           <div className="text-center py-12">
-            <Clock className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-            <h4 className="text-sm font-semibold text-slate-700">No activities scheduled for Day {selectedDay}</h4>
-            <p className="text-xs text-slate-400 mt-1">
+            <Clock className="w-10 h-10 text-slate-300 mx-auto mb-2" aria-hidden="true" />
+            <h4 className="text-sm font-semibold text-slate-800">No activities scheduled for Day {activeDay}</h4>
+            <p className="text-xs text-slate-600 mt-1">
               Click &quot;Add Activity&quot; to build this day&apos;s run sheet.
             </p>
           </div>
@@ -302,15 +302,17 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ state, onUpdateState, 
                       setSNotes(item.notes || '');
                       setItemModalOpen(true);
                     }}
-                    className="p-1.5 text-slate-400 hover:text-slate-700 rounded transition-colors"
+                    className="p-1.5 text-slate-500 hover:text-slate-800 rounded transition-colors cursor-pointer"
+                    aria-label={`Edit activity ${item.title}`}
                   >
-                    <Edit2 className="w-3.5 h-3.5" />
+                    <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
                   <button
                     onClick={() => handleDeleteItem(item.id)}
-                    className="p-1.5 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                    className="p-1.5 text-slate-500 hover:text-rose-600 rounded transition-colors cursor-pointer"
+                    aria-label={`Delete activity ${item.title}`}
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
                 </div>
               </div>
@@ -320,125 +322,130 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ state, onUpdateState, 
       </div>
 
       {/* Activity Add / Edit Modal */}
-      {itemModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <form
-            onSubmit={handleSaveItem}
-            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95"
-          >
-            <h3 className="text-base font-bold text-slate-900 font-editorial">
-              {editingItem ? 'Edit Run Sheet Activity' : `Add Activity for Day ${selectedDay}`}
-            </h3>
+      <ModalShell
+        isOpen={itemModalOpen}
+        onClose={() => setItemModalOpen(false)}
+        title={editingItem ? 'Edit Run Sheet Activity' : `Add Activity for Day ${activeDay}`}
+        maxWidthClassName="max-w-md"
+        bodyClassName="p-6"
+      >
+        <form onSubmit={handleSaveItem} className="space-y-4">
+          <div>
+            <label htmlFor="activity-name" className="block text-xs font-medium text-slate-800 mb-1">Activity Name</label>
+            <input
+              id="activity-name"
+              type="text"
+              required
+              value={sTitle}
+              onChange={(e) => setSTitle(e.target.value)}
+              placeholder="e.g. Sangeet Grand Entry & Family Toasts"
+              className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+            />
+          </div>
 
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Activity Name</label>
+              <label htmlFor="activity-start" className="block text-xs font-medium text-slate-800 mb-1">Start Time</label>
               <input
-                type="text"
+                id="activity-start"
+                type="time"
                 required
-                value={sTitle}
-                onChange={(e) => setSTitle(e.target.value)}
-                placeholder="e.g. Sangeet Grand Entry & Family Toasts"
+                value={sStartTime}
+                onChange={(e) => setSStartTime(e.target.value)}
                 className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Start Time</label>
-                <input
-                  type="time"
-                  required
-                  value={sStartTime}
-                  onChange={(e) => setSStartTime(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">End Time</label>
-                <input
-                  type="time"
-                  required
-                  value={sEndTime}
-                  onChange={(e) => setSEndTime(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Category</label>
-                <select
-                  value={sCategory}
-                  onChange={(e) => setSCategory(e.target.value as ScheduleCategory)}
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
-                >
-                  <option value="ceremony">Ceremony</option>
-                  <option value="meal">Meal / Banquet</option>
-                  <option value="setup">Setup &amp; Soundcheck</option>
-                  <option value="entertainment">Entertainment</option>
-                  <option value="speech">Speeches &amp; Toasts</option>
-                  <option value="photo_session">Photo Session</option>
-                  <option value="transition">Transit Buffer</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Lead Owner</label>
-                <input
-                  type="text"
-                  value={sOwner}
-                  onChange={(e) => setSOwner(e.target.value)}
-                  placeholder="e.g. Stage Manager / Emcee"
-                  className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
-                />
-              </div>
-            </div>
-
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
-                Location / Zone
-              </label>
+              <label htmlFor="activity-end" className="block text-xs font-medium text-slate-800 mb-1">End Time</label>
               <input
-                type="text"
-                value={sLocation}
-                onChange={(e) => setSLocation(e.target.value)}
-                placeholder="e.g. Lawn 1 or Crystal Ballroom"
+                id="activity-end"
+                type="time"
+                required
+                value={sEndTime}
+                onChange={(e) => setSEndTime(e.target.value)}
                 className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="activity-category" className="block text-xs font-medium text-slate-800 mb-1">Category</label>
+              <select
+                id="activity-category"
+                value={sCategory}
+                onChange={(e) => setSCategory(e.target.value as ScheduleCategory)}
+                className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden bg-white"
+              >
+                <option value="ceremony">Ceremony</option>
+                <option value="meal">Meal / Banquet</option>
+                <option value="setup">Setup &amp; Soundcheck</option>
+                <option value="entertainment">Entertainment</option>
+                <option value="speech">Speeches &amp; Toasts</option>
+                <option value="photo_session">Photo Session</option>
+                <option value="transition">Transit Buffer</option>
+                <option value="wind_down">Wind Down</option>
+                <option value="other">Other</option>
+              </select>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Cues &amp; Notes</label>
-              <textarea
-                rows={2}
-                value={sNotes}
-                onChange={(e) => setSNotes(e.target.value)}
-                placeholder="Microphone requirements, lighting cues, entrance song..."
+              <label htmlFor="activity-owner" className="block text-xs font-medium text-slate-800 mb-1">Lead Owner</label>
+              <input
+                id="activity-owner"
+                type="text"
+                value={sOwner}
+                onChange={(e) => setSOwner(e.target.value)}
+                placeholder="e.g. Stage Manager / Emcee"
                 className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
               />
             </div>
+          </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => setItemModalOpen(false)}
-                className="text-xs px-3 py-1.5 text-slate-600 hover:text-slate-900"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-purple-900 text-white rounded-lg text-xs font-bold hover:bg-purple-950 transition-colors cursor-pointer"
-              >
-                Save Activity
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+          <div>
+            <label htmlFor="activity-location" className="block text-xs font-medium text-slate-800 mb-1">
+              Location / Zone
+            </label>
+            <input
+              id="activity-location"
+              type="text"
+              value={sLocation}
+              onChange={(e) => setSLocation(e.target.value)}
+              placeholder="e.g. Lawn 1 or Crystal Ballroom"
+              className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="activity-notes" className="block text-xs font-medium text-slate-800 mb-1">Cues &amp; Notes</label>
+            <textarea
+              id="activity-notes"
+              rows={2}
+              value={sNotes}
+              onChange={(e) => setSNotes(e.target.value)}
+              placeholder="Microphone requirements, lighting cues, entrance song..."
+              className="w-full text-xs p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-700 outline-hidden"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={() => setItemModalOpen(false)}
+              className="text-xs px-3 py-1.5 text-slate-600 hover:text-slate-900 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-purple-900 text-white rounded-lg text-xs font-bold hover:bg-purple-950 transition-colors cursor-pointer"
+            >
+              Save Activity
+            </button>
+          </div>
+        </form>
+      </ModalShell>
     </div>
   );
 };
