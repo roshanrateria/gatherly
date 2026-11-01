@@ -42,3 +42,5 @@ gatherly-demo-raw.webm
 test-results/
 playwright-report/
 .vite/
+
+.vercel
